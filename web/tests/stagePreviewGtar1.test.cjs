@@ -196,35 +196,47 @@ test('STAGE_PREVIEW_GTAR1: StageOptionsSheet renders GTAR1 clean controls withou
 })
 
 test('STAGE_PREVIEW_GTAR1: Song format renders GTAR1 song view with metadata chips and ui-song-card', () => {
-  const html = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(StageView, {
-      song: mockSong,
-      songs: [mockSong],
-      activeSongIndex: 0,
-      onSelectSongIndex: () => {},
-      onOpenSetlistDrawer: () => {},
-      transposeOffset: 0,
-      onTransposeChange: () => {},
-    })
-  )
+  const storage = new Map([['gtar_tv_sync', '1']])
+  const prevStorage = global.localStorage
+  global.localStorage = {
+    getItem: (k) => storage.get(k) ?? null,
+    setItem: (k, v) => storage.set(k, String(v)),
+    removeItem: (k) => storage.delete(k),
+  }
 
-  // Non-fullscreen preview format checks
-  assert.ok(html.includes('ui-song-card'), 'Chart lines must be wrapped in ui-song-card container')
-  assert.ok(html.includes('Stage Preview Test Song'), 'Must render song title')
-  assert.ok(html.includes('Stage Test Artist'), 'Must render song artist')
+  try {
+    const html = ReactDOMServer.renderToStaticMarkup(
+      React.createElement(StageView, {
+        song: mockSong,
+        songs: [mockSong],
+        activeSongIndex: 0,
+        onSelectSongIndex: () => {},
+        onOpenSetlistDrawer: () => {},
+        transposeOffset: 0,
+        onTransposeChange: () => {},
+      })
+    )
 
-  // Metadata chips
-  assert.ok(html.includes('Orig Key:'), 'Must render Orig Key chip')
-  assert.ok(html.includes('Chart Key:'), 'Must render Chart Key chip')
-  assert.ok(html.includes('Tempo:'), 'Must render Tempo chip')
-  assert.ok(html.includes('Time:'), 'Must render Time signature chip')
-  assert.ok(html.includes('Year:'), 'Must render Year chip')
+    // Non-fullscreen preview format checks
+    assert.ok(html.includes('ui-song-card'), 'Chart lines must be wrapped in ui-song-card container')
+    assert.ok(html.includes('Stage Preview Test Song'), 'Must render song title')
+    assert.ok(html.includes('Stage Test Artist'), 'Must render song artist')
 
-  // Top row controls
-  assert.ok(html.includes('aria-label="Start autoscroll"'), 'Top row must contain autoscroll start/stop button')
-  assert.ok(html.includes('aria-label="Open Stage Options"'), 'Top row must contain Stage Options button')
-  assert.ok(html.includes('Cast / Pop-out Screen'), 'Second row must contain Cast button')
-  assert.ok(html.includes('Enter fullscreen'), 'Top row must contain Fullscreen button')
+    // Metadata chips
+    assert.ok(html.includes('Orig Key:'), 'Must render Orig Key chip')
+    assert.ok(html.includes('Chart Key:'), 'Must render Chart Key chip')
+    assert.ok(html.includes('Tempo:'), 'Must render Tempo chip')
+    assert.ok(html.includes('Time:'), 'Must render Time signature chip')
+    assert.ok(html.includes('Year:'), 'Must render Year chip')
+
+    // Top row controls
+    assert.ok(html.includes('aria-label="Start autoscroll"'), 'Top row must contain autoscroll start/stop button')
+    assert.ok(html.includes('aria-label="Open Stage Options"'), 'Top row must contain Stage Options button')
+    assert.ok(html.includes('Cast / Pop-out Screen'), 'Second row must contain Cast button')
+    assert.ok(html.includes('Enter fullscreen'), 'Top row must contain Fullscreen button')
+  } finally {
+    global.localStorage = prevStorage
+  }
 })
 
 test('STAGE_PREVIEW_GTAR1: Fixed bottom transport controls in fullscreen mode', () => {

@@ -298,7 +298,7 @@ export function ExportSongsDialog({ songs, preselected = [], onClose }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-app-border bg-app-surface/60 hover:bg-app-surface text-app-text hover:text-app-heading font-medium text-xs sm:text-sm cursor-pointer transition-colors"
+            className="h-[42px] min-h-[42px] px-4 py-2 rounded-xl border border-app-border bg-app-surface/60 hover:bg-app-surface text-app-text hover:text-app-heading font-medium text-xs sm:text-sm cursor-pointer transition-colors flex items-center justify-center"
           >
             Close
           </button>

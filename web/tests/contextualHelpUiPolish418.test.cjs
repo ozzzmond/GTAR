@@ -319,7 +319,7 @@ test('Stage Options: help in the sheet header; Escape closes help before the she
 test('help is wired into toolbars and dialogs; About is untouched', () => {
   assert.match(read('components/SongbookHomeView.tsx'), /<SongsLibraryHelp canImport=\{Boolean\(onOpenImportSongs\)\} canCheckDuplicates=\{Boolean\(onTrashDuplicates\)\} \/>\s*<button\s+type="button"\s+data-testid="songs-library-menu-btn"/, 'Songs help sits beside the library menu')
   assert.match(read('components/SetlistWorkspace.tsx'), /<SetlistsHelp className="mr-0\.5" \/>/, 'Setlists help sits in the setlist toolbar')
-  assert.match(read('components/StageView.tsx'), /<StageToolButtons [^\n]*\/>\s*<StagePreviewHelp \/>/, 'Stage Preview help follows the Metronome and Tuner buttons in the top bar')
+  assert.match(read('components/StageView.tsx'), /<StagePreviewHelp \/>[\s\S]*?<button[^>]*onClick=\{toggleFullscreen\}/, 'Stage Preview help sits immediately to the left of the Fullscreen button')
   assert.match(read('components/StageView.tsx'), /data-testid="toolbar-back"[\s\S]*?<\/div>[\s\S]*?<div[^>]*justify-end/, 'Back button aligned separately on the left while other controls group toward the right')
   assert.match(read('components/DesktopEditor.tsx'), /<EditorHelp \/>/, 'Editor help sits in the editor header')
   assert.match(read('components/ThemeModal.tsx'), /<ThemeHelp \/>/, 'Theme help sits in the Stage Color Theme header')

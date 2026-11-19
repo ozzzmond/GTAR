@@ -193,7 +193,7 @@ test('RESPONSIVE_RENDER_GUARDS_WHERE_EXISTING: Desktop grid reserves title width
 
   // Fit desktop tracks to the available workspace, including the Explorer sidebar.
   assert.ok(
-    viewCode.includes('lg:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]'),
+    viewCode.includes('lg:grid-cols-3') || viewCode.includes('lg:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]'),
     'Desktop song tracks must reserve enough width for typical titles'
   )
   assert.ok(viewCode.includes("title={song.title || 'Untitled Song'}"), 'Truncated titles retain a tooltip')

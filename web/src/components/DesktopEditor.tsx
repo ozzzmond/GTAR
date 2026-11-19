@@ -113,7 +113,15 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
 
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [copyFeedback, setCopyFeedback] = useState(false)
-  const [editorMode, setEditorMode] = useState<'code' | 'raw'>('code')
+  const [editorMode, setEditorMode] = useState<'code' | 'raw'>(() => {
+    try {
+      const saved = localStorage.getItem('gtar_editor_mode')
+      if (saved === 'code' || saved === 'raw') return saved
+    } catch {
+      // ignore
+    }
+    return 'raw'
+  })
   const fields = (value: ActiveSongState) => ({
     title: value.title || '',
     artist: value.artist || '',
@@ -977,7 +985,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             <button
               type="button"
               onClick={() => requestNavigation(onClose)}
-              className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+              className="ui-button h-9 min-h-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
               aria-label="Return to Stage View"
             >
               <ArrowLeft className="w-4 h-4 shrink-0" />

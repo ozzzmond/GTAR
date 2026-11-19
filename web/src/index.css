@@ -36,6 +36,11 @@
 
 :root {
   color-scheme: dark;
+  --app-header-height: 57px;
+}
+
+html {
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -48,6 +53,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+[data-testid="songbook-canvas"] {
+  scrollbar-gutter: stable;
 }
 
 /* Custom scrollbars matching Solarized Stage Dark */

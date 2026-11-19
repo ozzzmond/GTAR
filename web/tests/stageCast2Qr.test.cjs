@@ -42,10 +42,11 @@ test('QR payload accepts only same-site TV reference; secrets, extra keys and fo
 
 test('camera/photo decoder, cancellation, permission denial and manual fallback; TV options update existing preference', async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: origin })
-  const keys = ['window', 'document', 'navigator', 'Image', 'IS_REACT_ACT_ENVIRONMENT']
+  dom.window.localStorage.setItem('gtar_tv_sync', '1')
+  const keys = ['window', 'document', 'navigator', 'Image', 'IS_REACT_ACT_ENVIRONMENT', 'localStorage']
   const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document,
-    navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true })) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value })
+    navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true, localStorage: dom.window.localStorage })) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value })
   const createUrl = URL.createObjectURL, revokeUrl = URL.revokeObjectURL
   URL.createObjectURL = () => 'blob:test'; URL.revokeObjectURL = () => {}
   let data = pixels(safe), image, stopped = 0

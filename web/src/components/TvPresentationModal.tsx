@@ -3,6 +3,7 @@ import { Tv, Copy, Check, Monitor, X, ExternalLink } from 'lucide-react'
 import { stageCast } from '../utils/stageCast'
 import { stageCast2Controller } from '../utils/stageCast2Controller'
 import { StageCast2Panel } from './StageCast2Panel'
+import { TvPresentationOptions } from './TvPresentationOptions'
 
 const subscribe = (listener: () => void) => stageCast2Controller.subscribe(listener)
 const isConnected = () => stageCast2Controller.getView().state === 'CONNECTED'
@@ -148,6 +149,8 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
             <div className="pt-2 border-t border-app-border/40">
               <StageCast2Panel />
             </div>
+            {/* TV Receiver Options */}
+            <TvPresentationOptions />
           </div>
         </div>
 
@@ -156,7 +159,7 @@ export const TvPresentationModal: React.FC<TvPresentationModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-bold rounded-lg bg-app-base border border-app-border text-app-text hover:text-app-action hover:border-app-action transition-colors cursor-pointer"
+            className="h-[42px] min-h-[42px] px-4 text-xs font-bold rounded-lg bg-app-base border border-app-border text-app-text hover:text-app-action hover:border-app-action transition-colors cursor-pointer flex items-center justify-center"
           >
             Back to Stage Controls
           </button>

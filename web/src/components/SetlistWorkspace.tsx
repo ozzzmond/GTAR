@@ -139,14 +139,14 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   }, [openSetlist, songs, songIndex])
   const firstPlayable = entries.findIndex(entry => entry.libraryIndex !== null)
 
-  const crumbButton = `${touch} px-1 rounded-md text-app-muted hover:text-app-link font-medium transition-colors cursor-pointer`
+  const crumbButton = 'min-h-[42px] h-[42px] flex items-center px-1 rounded-md text-app-muted hover:text-app-link font-medium transition-colors cursor-pointer'
   const crumbCurrent = 'ui-primary-text text-app-heading font-semibold truncate'
 
   return (
     <div data-testid="setlist-workspace" className="mb-4">
       {/* Breadcrumbs & scope bar: full-bleed like the Songbook filter bar. Compact: row 1 crumbs | Manage, row 2 Sort | QR ⋯ */}
-      <div data-testid="setlist-filter-bar" className="ui-filter-bar bg-app-filter border-b border-app-border -mx-4 -mt-3 sm:-mx-6 sm:-mt-4 px-4 py-1 mb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:justify-between">
-        <nav aria-label="Breadcrumb" data-testid="workspace-breadcrumbs" className="col-start-1 row-start-1 flex items-center gap-1 text-xs text-app-muted min-w-0 min-h-11 overflow-hidden whitespace-nowrap">
+      <div data-testid="setlist-filter-bar" className="ui-filter-bar sticky top-[var(--app-header-height,57px)] z-30 bg-app-filter border-b border-app-border px-4 sm:px-6 py-1 mb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:flex sm:justify-between">
+        <nav aria-label="Breadcrumb" data-testid="workspace-breadcrumbs" className="col-start-1 row-start-1 flex items-center gap-1.5 text-xs text-app-muted min-w-0 min-h-[42px] h-[42px] overflow-hidden whitespace-nowrap">
           <button
             type="button"
             data-crumb
@@ -184,7 +184,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                   aria-label="Sort setlists"
                   value={menu.sortValue}
                   onChange={(e) => menu.onSortChange(e.target.value)}
-                  className="col-start-1 row-start-2 justify-self-start sm:ml-auto min-w-0 max-w-full min-h-11 bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
+                  className="col-start-1 row-start-2 justify-self-start sm:ml-auto min-w-0 max-w-full min-h-[42px] h-[42px] bg-app-surface border border-app-border text-app-text text-xs rounded-xl px-2.5 outline-none cursor-pointer"
                 >
                   {menu.sortOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -197,7 +197,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                     type="button"
                     data-testid="toggle-setlist-selection-mode"
                     onClick={() => menu.onManageSetlists?.(null)}
-                    className="col-start-2 row-start-1 justify-self-end ui-button min-h-11 px-3 bg-app-button hover:brightness-110 border border-app-border rounded-xl text-xs text-app-button-text font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                    className="col-start-2 row-start-1 justify-self-end ui-button min-h-[42px] h-[42px] px-3 bg-app-button hover:brightness-110 border border-app-border rounded-xl text-xs text-app-button-text font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
                   >
                     <Layers className="w-3.5 h-3.5 text-app-section" />
                     <span>Manage</span>
@@ -237,6 +237,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
         )}
       </div>
 
+      <div className="px-4 py-3 sm:px-6 sm:py-4 w-full">
       {openSetlist ? (
         /* Single setlist view (GTAR1 CASE A) */
         <div className="space-y-3">
@@ -405,7 +406,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
               <p className="text-xs text-app-muted mt-1">Create a new setlist from the Music Explorer.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5">
               {setlists.map(sl => {
                 const count = sl.songs?.length || 0
                 const created = formatCreated(sl.createdAt)
@@ -576,6 +577,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
           )}
         </div>
       )}
+      </div>
     </div>
   )
 }

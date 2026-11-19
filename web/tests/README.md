@@ -236,6 +236,7 @@ New or renamed tests await a human choice of primary category.
 - [bandSyncP1c520.test.cjs](bandSyncP1c520.test.cjs)
 - [bandSyncP1f520.test.cjs](bandSyncP1f520.test.cjs)
 - [bandSyncProtocol520.test.cjs](bandSyncProtocol520.test.cjs)
+- [batchUiTweaks574.test.cjs](batchUiTweaks574.test.cjs)
 - [bundleSplitBoundaries.test.cjs](bundleSplitBoundaries.test.cjs)
 - [chordProSections.test.cjs](chordProSections.test.cjs)
 - [cloudSyncAndBackdropUx.test.cjs](cloudSyncAndBackdropUx.test.cjs)

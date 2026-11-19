@@ -59,6 +59,8 @@ import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { OnlineSourcesDialog, OnlineSourcesRow } from './OnlineSourcesRow'
 import { StageToolRows } from './StageToolRows'
+import { TvSyncRow } from './TvSyncRow'
+import { TvPresentationModal } from './TvPresentationModal'
 import { MidiRow } from '../midi/MidiRow'
 import { MidiDialog } from '../midi/MidiDialog'
 import { STAGE_TOOLS } from '../stageTools/registry'
@@ -261,6 +263,26 @@ export const Header: React.FC<HeaderProps> = ({
     color: destIconColor,
     boxShadow: isModeFocused ? `0 0 0 2px ${destAction}` : undefined,
   }
+  const headerRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el) return
+    const updateHeaderHeight = () => {
+      const h = el.offsetHeight || el.getBoundingClientRect().height
+      if (h > 0) {
+        document.documentElement.style.setProperty('--app-header-height', `${Math.round(h)}px`)
+      }
+    }
+    updateHeaderHeight()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateHeaderHeight) : null
+    ro?.observe(el)
+    window.addEventListener('resize', updateHeaderHeight)
+    return () => {
+      ro?.disconnect()
+      window.removeEventListener('resize', updateHeaderHeight)
+    }
+  }, [])
+
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
@@ -363,6 +385,9 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Stage tools: each switch puts that tool's button on the Stage toolbar */}
       <StageToolRows rowClass={popoverItem} />
+
+      {/* TV Sync: in Advanced Tools with explicit on/off switch (#574) */}
+      <TvSyncRow rowClass={popoverItem} onOpenDialog={() => openAdvancedToolsDialog('tv-sync')} />
 
       {/* MIDI: off by default; the row opens its app-level dialog (#536) */}
       <MidiRow rowClass={popoverItem} onOpenDialog={() => openAdvancedToolsDialog('midi')} />
@@ -618,7 +643,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="bg-app-header border-b border-app-border sticky top-0 z-40 flex flex-col select-none max-w-full">
+      <header ref={headerRef} className="bg-app-header border-b border-app-border sticky top-0 z-40 flex flex-col select-none max-w-full">
       {/* Row 1 (GTAR1 header) — the compact search overlay covers this row only */}
       <div className="relative px-2 sm:px-3 py-2 sm:py-2.5">
       <div className="flex items-center justify-between gap-1 sm:gap-4">
@@ -938,7 +963,10 @@ export const Header: React.FC<HeaderProps> = ({
       {advancedToolsDialog === 'midi' && (
         <MidiDialog onClose={closeAdvancedToolsDialog} returnFocusRef={advancedToolsButtonRef} />
       )}
-      {advancedToolsDialog !== null && advancedToolsDialog !== 'online-sources' && advancedToolsDialog !== 'midi' && (
+      {advancedToolsDialog === 'tv-sync' && (
+        <TvPresentationModal isOpen onClose={closeAdvancedToolsDialog} />
+      )}
+      {advancedToolsDialog !== null && advancedToolsDialog !== 'online-sources' && advancedToolsDialog !== 'midi' && advancedToolsDialog !== 'tv-sync' && (
         <ExtensionSettingsDialog host={extensionHost} id={advancedToolsDialog} onClose={closeAdvancedToolsDialog} returnFocusRef={advancedToolsButtonRef} />
       )}
 

@@ -12,8 +12,17 @@ import { useLiveLyricScroll } from '../utils/useLiveLyricScroll'
 import { LiveLyricsControl } from './LiveLyrics'
 import { useLiveLyrics } from '../utils/useLiveLyrics'
 import { TvPresentationOptions } from './TvPresentationOptions'
+import { useTvSyncEnabled } from '../utils/tvSyncSettings'
 import { transposeContext } from '../utils/songKeySemantics'
-import { SETTINGS_KEYS, SETTINGS_CHANGED, readBackupSettings, readStageAppearanceExtras } from '../utils/backupSettings'
+import {
+  SETTINGS_KEYS,
+  SETTINGS_CHANGED,
+  readBackupSettings,
+  readStageAppearanceExtras,
+  getThemeAssignedRole,
+  isLightTheme,
+  loadThemeModeAssignments,
+} from '../utils/backupSettings'
 import React, { useState, useLayoutEffect, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   createFullscreenController,
@@ -37,7 +46,14 @@ import {
   Gauge,
   ArrowLeft,
   FileEdit,
+  Sun,
+  Moon,
 } from 'lucide-react'
+import type {
+  ThemeMode,
+  ThemeModeAssignments,
+  CustomThemeColors,
+} from './ThemeModal'
 import { StageControlDock, readPersistedDockPosition } from './StageControlDock'
 import { StageOptionsSheet } from './StageOptionsSheet'
 import { useExtensionHost } from '../extensions/host/useExtensionHost'
@@ -106,6 +122,10 @@ interface StageViewProps {
   onToggleTwoColumn?: (enabled: boolean) => void
   onOpenEditor?: () => void
   onBack?: () => void
+  onToggleThemeMode?: () => void
+  currentTheme?: ThemeMode
+  customColors?: CustomThemeColors
+  themeModeAssignments?: ThemeModeAssignments
   /** Called whenever the stage enters or exits "performance mode" (fullscreen or focus). */
   onPerformanceModeChange?: (isActive: boolean) => void
 }
@@ -172,8 +192,21 @@ export const StageView: React.FC<StageViewProps> = ({
   onToggleTwoColumn: externalOnToggleTwoColumn,
   onOpenEditor,
   onBack,
+  onToggleThemeMode,
+  currentTheme,
+  customColors,
+  themeModeAssignments,
   onPerformanceModeChange,
 }) => {
+  const effectiveTheme: ThemeMode = currentTheme ||
+    (typeof localStorage !== 'undefined' ? (localStorage.getItem(SETTINGS_KEYS.themeMode) as ThemeMode | null) : null) ||
+    'solarized-dark'
+  const effectiveAssignments: ThemeModeAssignments = themeModeAssignments ||
+    (typeof localStorage !== 'undefined' ? loadThemeModeAssignments() : { light: 'paper-light', dark: 'solarized-dark' })
+  const activeRole = getThemeAssignedRole(effectiveTheme, effectiveAssignments)
+  const isCurrentLight = activeRole === 'light' || (activeRole === null && isLightTheme(effectiveTheme, customColors))
+  const targetRole = isCurrentLight ? 'dark' : 'light'
+  const modeSwitchLabel = targetRole === 'dark' ? 'Switch to dark mode' : 'Switch to light mode'
   const { host: bandHost, active: bandSyncEnabled, leader: bandLeader, remote: bandRemote } = useBandSyncGate()
   const isInSetlistMode = propIsInSetlistMode || queueMode === 'setlist'
   // Stage view configuration & controls (matching Jetpack Compose SongViewerScreen.kt)
@@ -553,9 +586,16 @@ export const StageView: React.FC<StageViewProps> = ({
   )
 
   // Stage Cast Active Presentation State
+  const tvSyncEnabled = useTvSyncEnabled()
   const [isCastActive, setIsCastActive] = useState(() => stageCast.isPresentationActive())
   const [canPrevSection, setCanPrevSection] = useState(false)
   const [canNextSection, setCanNextSection] = useState(true)
+
+  useEffect(() => {
+    if (!tvSyncEnabled && isCastActive) {
+      stageCast.stopPresentation()
+    }
+  }, [tvSyncEnabled, isCastActive])
 
   useEffect(() => {
     const unsubscribe = stageCast.subscribeSessionState((active) => {
@@ -1815,6 +1855,27 @@ export const StageView: React.FC<StageViewProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Dark/Light mode toggle in fullscreen options, adjacent to transpose key controls */}
+            {onToggleThemeMode && (
+              <button
+                type="button"
+                data-testid="stage-fullscreen-theme-mode-toggle"
+                aria-label={modeSwitchLabel}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleThemeMode()
+                  triggerOverlaysShow()
+                }}
+                className="ui-button min-h-[42px] min-w-[42px] h-[42px] px-2.5 rounded-xl border flex items-center justify-center transition-colors shrink-0 bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+              >
+                {targetRole === 'dark' ? (
+                  <Moon className="w-5 h-5 shrink-0" aria-hidden="true" />
+                ) : (
+                  <Sun className="w-5 h-5 shrink-0" aria-hidden="true" />
+                )}
+              </button>
+            )}
+
             {/* Key Chip */}
             <button
               type="button"
@@ -1824,7 +1885,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 triggerOverlaysShow()
               }}
               aria-label={`Key: ${effectivePerformanceKey || 'Not Set'}. Click to transpose.`}
-              className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+              className="ui-button min-h-[42px] min-w-[42px] h-[42px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
             >
               <span className="text-app-muted">Key:</span>
               <span className="font-bold text-app-accent">{effectivePerformanceKey || '—'}</span>
@@ -1851,7 +1912,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 triggerOverlaysShow()
               }}
               aria-label="Toggle Chords vs Numbers"
-              className={`hidden sm:inline-flex min-h-[44px] px-3 items-center rounded-xl text-xs font-bold border transition-colors cursor-pointer shrink-0 ${
+              className={`hidden sm:inline-flex min-h-[42px] h-[42px] px-3 items-center rounded-xl text-xs font-bold border transition-colors cursor-pointer shrink-0 ${
                 notation === 'numbers'
                   ? 'bg-app-action border-app-action text-app-on-action shadow-sm'
                   : 'bg-app-base border-app-border text-app-text hover:border-app-action'
@@ -1869,7 +1930,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 triggerOverlaysShow()
               }}
               aria-label={isAutoScrolling ? 'Pause autoscroll' : 'Start autoscroll'}
-              className={`ui-button min-w-[44px] min-h-[44px] px-2.5 h-11 rounded-xl border flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
+              className={`ui-button min-w-[42px] min-h-[42px] h-[42px] px-2.5 rounded-xl border flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
                 isAutoScrolling
                   ? 'bg-status-error/15 border-status-error text-status-error hover:bg-status-error/25 shadow-sm'
                   : 'bg-app-button hover:brightness-110 border-app-border text-app-button-text'
@@ -1892,7 +1953,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 triggerOverlaysShow()
               }}
               aria-label="Open Stage Options"
-              className="ui-button min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl bg-app-base border border-app-border text-app-text hover:border-app-action transition-colors flex items-center justify-center shrink-0 cursor-pointer"
+              className="ui-button min-w-[42px] min-h-[42px] w-[42px] h-[42px] rounded-xl bg-app-base border border-app-border text-app-text hover:border-app-action transition-colors flex items-center justify-center shrink-0 cursor-pointer"
             >
               <Sliders className="w-5 h-5" />
             </button>
@@ -1905,7 +1966,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 if (isFullscreen && fullscreenCtrl.isSupported) fullscreenCtrl.toggle()
                 else setIsDistractionFree(false)
               }}
-              className="min-h-[44px] px-3 py-2 rounded-xl bg-app-base hover:bg-app-border text-app-text text-xs font-semibold
+              className="min-h-[42px] h-[42px] px-3 py-2 rounded-xl bg-app-base hover:bg-app-border text-app-text text-xs font-semibold
                          flex items-center gap-1.5 border border-app-border transition-colors cursor-pointer shrink-0"
               aria-label="Exit fullscreen"
             >
@@ -1959,7 +2020,7 @@ export const StageView: React.FC<StageViewProps> = ({
           </button>
         </div>
 
-        {/* Right Side: Editor, Metronome/Tuner (when switched on), Help, Key, Chords/Numbers, speed, Stage Options, Cast, Fullscreen toggle */}
+        {/* Right Side: Editor, Metronome/Tuner (when switched on), Key, Chords/Numbers, speed, Stage Options, Cast, Help, Fullscreen toggle */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end">
           <button
             type="button"
@@ -1971,7 +2032,6 @@ export const StageView: React.FC<StageViewProps> = ({
             <span className="hidden sm:inline">Editor</span>
           </button>
           <StageToolButtons hidden={inPerformanceMode} buttonClass="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer" />
-          <StagePreviewHelp />
           {/* Key Chip (Tapping opens KeyPickerModal) */}
           <button
             type="button"
@@ -2068,28 +2128,33 @@ export const StageView: React.FC<StageViewProps> = ({
             <Sliders className="w-4 h-4" />
           </button>
 
-          {/* Cast button (stays in this second toolbar row) */}
-          <button
-            type="button"
-            onClick={handleTogglePresentation}
-            className={`min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 ${
-              isCastActive
-                ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-status-error hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
-                : 'bg-app-base border-app-border text-app-text hover:text-app-action hover:border-app-action'
-            }`}
-            aria-label={
-              isCastActive
-                ? 'Disconnect / Stop Presenting (Session Active - click to terminate)'
-                : 'Cast / Pop-out Screen (Open distraction-free fullscreen teleprompter on secondary monitor or TV)'
-            }
-          >
-            <Cast className="w-4 h-4" />
-            {isCastActive && (
-              <span className="hidden xl:inline text-[10px] font-mono font-bold uppercase tracking-wider">
-                Stop
-              </span>
-            )}
-          </button>
+          {/* Cast button (stays in this second toolbar row when TV Sync is enabled) */}
+          {tvSyncEnabled && (
+            <button
+              type="button"
+              onClick={handleTogglePresentation}
+              className={`min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 ${
+                isCastActive
+                  ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-status-error hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
+                  : 'bg-app-base border-app-border text-app-text hover:text-app-action hover:border-app-action'
+              }`}
+              aria-label={
+                isCastActive
+                  ? 'Disconnect / Stop Presenting (Session Active - click to terminate)'
+                  : 'Cast / Pop-out Screen (Open distraction-free fullscreen teleprompter on secondary monitor or TV)'
+              }
+            >
+              <Cast className="w-4 h-4" />
+              {isCastActive && (
+                <span className="hidden xl:inline text-[10px] font-mono font-bold uppercase tracking-wider">
+                  Stop
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Help button immediately left of Fullscreen */}
+          <StagePreviewHelp />
 
           {/* Fullscreen toggle (The ONLY GTAR control kept in that row: one click on/off) */}
           <button
@@ -2548,7 +2613,7 @@ export const StageView: React.FC<StageViewProps> = ({
                 aria-haspopup="dialog"
                 aria-label={proPresenterStatus.label}
                 data-testid="stage-bottom-propresenter-btn"
-                className="p-3 min-w-[44px] min-h-[44px] rounded-2xl active:scale-95 flex items-center justify-center gap-1.5 transition-all border text-app-text hover:text-app-action cursor-pointer"
+                className="p-3 min-w-[42px] min-h-[42px] h-[42px] rounded-2xl active:scale-95 flex items-center justify-center gap-1.5 transition-all border text-app-text hover:text-app-action cursor-pointer"
                 style={{
                   backgroundColor: 'var(--custom-dock-btn-bg, var(--custom-control-button-bg, #1e293b))',
                   borderColor: 'var(--custom-dock-border, var(--custom-card-border, #334155))',
@@ -2668,7 +2733,6 @@ export const StageView: React.FC<StageViewProps> = ({
           }
         }}
         setlistName={isInSetlistMode ? activeSetlistName : undefined}
-        onOpenTvPresentation={() => setIsTvPresentationModalOpen(true)}
       >
         <TvPresentationOptions />
       </StageOptionsSheet>

@@ -25,7 +25,7 @@ test('TV_TYPOGRAPHY: independent TV font zoom controls, boundaries, presets, and
   const keys = ['window', 'document', 'localStorage', 'IS_REACT_ACT_ENVIRONMENT']
   const prior = Object.fromEntries(keys.map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
 
-  const store = new Map()
+  const store = new Map([['gtar_tv_sync', '1']])
   const mockStorage = {
     getItem: k => store.get(k) ?? null,
     setItem: (k, v) => store.set(k, String(v)),

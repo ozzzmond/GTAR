@@ -360,7 +360,7 @@ export const ImportDialogModal: React.FC<ImportDialogModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-xl bg-app-base border border-app-border text-xs font-semibold text-app-muted hover:text-app-heading transition-colors cursor-pointer"
+            className="h-[42px] min-h-[42px] px-4 py-1.5 rounded-xl bg-app-base border border-app-border text-xs font-semibold text-app-muted hover:text-app-heading transition-colors cursor-pointer flex items-center justify-center"
           >
             Cancel
           </button>

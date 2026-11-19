@@ -92,7 +92,7 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
             <button
               type="button"
               onClick={() => { onReset(); onClose() }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#DC6E67]/50 bg-app-base text-status-error hover:bg-[#DC6E67]/20 text-xs font-bold transition-all cursor-pointer shadow-sm"
+              className="h-[42px] min-h-[42px] flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#DC6E67]/50 bg-app-base text-status-error hover:bg-[#DC6E67]/20 text-xs font-bold transition-all cursor-pointer shadow-sm"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Reset (0)</span>
@@ -122,7 +122,7 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
                     onSelectOffset(context.toStoredOffset(offset))
                     onClose()
                   }}
-                  className={`px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                  className={`h-[42px] min-h-[42px] px-3 py-1.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     isSelected
                       ? 'border-app-accent bg-app-base text-app-heading ring-1 ring-app-accent shadow-md'
                       : 'border-app-border bg-app-base/50 text-app-muted hover:border-app-action hover:text-app-heading'
@@ -130,7 +130,7 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
                 >
                   <div className="flex items-center gap-3">
                     <span
-                      className={`w-10 py-1 text-center rounded text-xs font-mono font-bold ${
+                      className={`w-10 py-0.5 text-center rounded text-xs font-mono font-bold ${
                         isSelected
                           ? 'bg-app-button text-app-button-text'
                           : 'bg-app-surface text-app-muted'
@@ -158,7 +158,7 @@ export const KeyPickerModal: React.FC<KeyPickerModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-app-surface text-app-heading hover:bg-app-border font-semibold transition-colors cursor-pointer"
+            className="h-[42px] min-h-[42px] px-4 rounded-lg bg-app-surface text-app-heading hover:bg-app-border font-semibold transition-colors cursor-pointer flex items-center justify-center"
           >
             Close
           </button>

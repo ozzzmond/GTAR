@@ -210,7 +210,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
             type="button"
             data-testid="about-modal-close"
             onClick={onClose}
-            className="min-h-11 px-4 py-1.5 rounded-lg bg-app-border/50 hover:bg-app-border text-app-heading font-semibold transition-colors cursor-pointer"
+            className="min-h-[42px] h-[42px] px-4 py-1.5 rounded-lg bg-app-border/50 hover:bg-app-border text-app-heading font-semibold transition-colors cursor-pointer flex items-center justify-center"
           >
             Close
           </button>
