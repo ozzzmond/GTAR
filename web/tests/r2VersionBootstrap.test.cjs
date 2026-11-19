@@ -16,12 +16,12 @@ test('zero base is rejected in minor-0 DEV tags and accepted in minor-1 DEV tags
 
 test('R2 is exactly one provisional tag; historical and subsequent formulas stay distinct', () => {
   for (const [tag, prod, next] of [
-    ['v1.0.145-dev.2', 'v1.1.147', 'v1.0.147-dev.1'],
-    [R2.tag, 'v1.2.0', 'v1.1.0-dev.1'],
-    ['v1.0.145-dev.4', 'v1.1.149', 'v1.0.149-dev.1'],
-    ['v1.1.0-dev.1', 'v1.2.1', 'v1.1.1-dev.1'],
-    ['v1.1.0-dev.2', 'v1.2.2', 'v1.1.2-dev.1'],
-    ['v1.1.5-dev.3', 'v1.2.8', 'v1.1.8-dev.1'],
+    ['v1.0.145-dev.2', 'v1.1.147', 'v1.0.147-dev.0'],
+    [R2.tag, 'v1.2.0', 'v1.1.0-dev.0'],
+    ['v1.0.145-dev.4', 'v1.1.149', 'v1.0.149-dev.0'],
+    ['v1.1.0-dev.1', 'v1.2.1', 'v1.1.1-dev.0'],
+    ['v1.1.0-dev.2', 'v1.2.2', 'v1.1.2-dev.0'],
+    ['v1.1.5-dev.3', 'v1.2.8', 'v1.1.8-dev.0'],
   ]) {
     const p = parseDevTag(tag)
     assert.equal(p.prodTag, prod); assert.equal(p.nextDevTag, next)
@@ -30,7 +30,7 @@ test('R2 is exactly one provisional tag; historical and subsequent formulas stay
 })
 
 test('strict canonical syntax, safe arithmetic, numeric ordering', () => {
-  for (const tag of ['v1.0.0-dev.1', 'v1.1.00-dev.1', 'v1.1.1-dev.01', 'v1.1.0-dev.0',
+  for (const tag of ['v1.0.0-dev.1', 'v1.1.00-dev.1', 'v1.1.1-dev.01', 'v1.1.0-dev.00',
     'v1.1.-1-dev.1', 'v1.1.0-dev.1A', 'v1.1.0-dev.1aa', 'v1.1.0-dev.1\n',
     'v1.1.0-dev.1\r', 'v1.2.0-dev.1', 'v1.1.9007199254740991-dev.1',
     'v1.1.0-dev.9007199254740992', 'v1.0.9007199254740992-dev.1']) assert.throws(() => parseDevTag(tag), tag)
@@ -90,7 +90,7 @@ test('A/B/C bootstrap preserves web tree, ancestry and exact trusted helper byte
   f.git('merge-base', '--is-ancestor', f.b, f.c)
   assert.notEqual(f.b, f.c)
   const p = f.plan()
-  assert.equal(p.prodTag, R2.prodTag); assert.equal(p.nextDevTag, R2.nextDevTag)
+  assert.equal(p.prodTag, R2.prodTag); assert.equal(p.nextDevTag, 'v1.1.0-dev.0')
   assert.equal(p.baseline, 'v1.1.145'); assert.equal(p.mainSha, f.b)
   assert.equal(before, f.git('show-ref'))
   assert.equal(controller.runtimeContract(f.repo, f.c), true)
@@ -147,18 +147,19 @@ test('R2 collision, main already at checkpoint, divergent ancestry and helper dr
   assert.throws(() => f.plan(R2.tag, drift), /runtime identity contract/)
 })
 
-test('R2 baseline supports new DEV zero and blocks obsolete scheme promotions', t => {
+test('R2 production supports a later positive-iteration DEV checkpoint', t => {
   const f = fixture(t)
   f.git('tag', R2.prodTag, f.c)
   f.git('update-ref', 'refs/remotes/origin/main', f.c)
-  f.stamps(R2.nextDevTag); const next = f.commit('post VERIFIED_PROD metadata')
-  f.git('tag', R2.nextDevTag, next); f.git('update-ref', 'refs/remotes/origin/dev', next)
-  const p = controller.plan(f.repo, R2.nextDevTag, next, 'refs/heads/main', f.c)
-  assert.equal(p.baseline, 'v1.2.0'); assert.equal(p.prodTag, 'v1.2.1'); assert.equal(p.nextDevTag, 'v1.1.1-dev.1')
+  const checkpointTag = 'v1.1.0-dev.1' // Explicit first iteration, not the baseline advice.
+  f.stamps(checkpointTag); const next = f.commit('first post-PROD development checkpoint')
+  f.git('tag', checkpointTag, next); f.git('update-ref', 'refs/remotes/origin/dev', next)
+  const p = controller.plan(f.repo, checkpointTag, next, 'refs/heads/main', f.c)
+  assert.equal(p.baseline, 'v1.2.0'); assert.equal(p.prodTag, 'v1.2.1'); assert.equal(p.nextDevTag, 'v1.1.1-dev.0')
   const identity = resolveDevIdentity(f.repo, {}, f.adapter)
-  assert.equal(identity.tag, R2.nextDevTag)
+  assert.equal(identity.tag, checkpointTag)
   f.git('tag', 'v1.1.0-dev.1a', next)
-  assert.equal(controller.plan(f.repo, R2.nextDevTag, next, 'refs/heads/main', f.c).sha, next)
+  assert.equal(controller.plan(f.repo, checkpointTag, next, 'refs/heads/main', f.c).sha, next)
 })
 
 test('R2 requires direct stamps rather than a stabilization alias', t => {
@@ -183,4 +184,27 @@ test('R2 validates the committed DEV fallback even with tag-derived runtime defi
   f.put('web/src/types/gtar.ts', "export const GTAR_APP_VERSION = typeof __GTAR_PROD_VERSION__ === 'string' ? __GTAR_PROD_VERSION__ : '0.0.0-unversioned';\nexport const GTAR_DEV_VERSION = typeof __GTAR_DEV_VERSION__ === 'string' ? __GTAR_DEV_VERSION__ : '1.0.145-dev.2';")
   const sha = f.commit('wrong fallback'); f.git('tag', '-f', R2.tag, sha)
   assert.throws(() => inspectCheckpoint(f.repo, R2.tag), /R2 checkpoint requires exact/)
+})
+
+test('dev.0 is an explicit baseline with no PROD or next-promotion identity', () => {
+  for (const tag of ['v1.1.0-dev.0', 'v1.1.4-dev.0', 'v1.0.108-dev.0']) {
+    const p = parseDevTag(tag)
+    assert.equal(p.iteration, 0)
+    assert.equal(p.promotable, false)
+    assert.equal(p.classification, 'NON_PROMOTABLE')
+    assert.equal(p.prodTag, null)
+    assert.equal(p.nextDevTag, null)
+  }
+  for (const [tag, prod, next] of [
+    ['v1.1.3-dev.1', 'v1.2.4', 'v1.1.4-dev.0'],
+    ['v1.1.4-dev.1', 'v1.2.5', 'v1.1.5-dev.0'],
+    ['v1.1.4-dev.2', 'v1.2.6', 'v1.1.6-dev.0'],
+  ]) {
+    const p = parseDevTag(tag)
+    assert.equal(p.promotable, true)
+    assert.equal(p.prodTag, prod)
+    assert.equal(p.nextDevTag, next)
+    assert.equal(parseDevTag(next).prodTag, null)
+  }
+  assert.deepEqual(R2, { tag: 'v1.0.145-dev.3', prodTag: 'v1.2.0', nextDevTag: 'v1.1.0-dev.1' })
 })
