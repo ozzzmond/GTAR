@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Check, ChevronRight, Edit2, Layers, ListMusic, MoreHorizontal, Music, Pencil, Play, Share2, Trash2, Upload } from 'lucide-react'
-import type { ActiveSongState, WebSetlist } from '../types/gtar'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronRight, ListMusic, MoreHorizontal, Music, Pencil, Play, Search, Share2, Trash2, Upload, X } from 'lucide-react'
+import type { ActiveSongState, SetlistFolder, WebSetlist } from '../types/gtar'
 import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
 import { DropdownPortal } from './DropdownPortal'
 import { SetlistsHelp } from './menuHelp'
+import { MultiSongSetlistPicker } from './MultiSongSetlistPicker'
 import { SwipeableActionCard } from './SwipeableActionCard'
 
 /**
@@ -18,6 +19,8 @@ export type SetlistWorkspaceScope = 'ALL_SETLISTS' | 'UNFILED_SETLISTS'
 export interface SetlistWorkspaceProps {
   scope: SetlistWorkspaceScope
   folderName?: string
+  folders?: SetlistFolder[]
+  onSetlistFolderChange?: (id: string | number, folderId: string | null) => boolean
   /** Active setlists in display order (already searched and sorted by the caller). */
   setlists: WebSetlist[]
   songs: ActiveSongState[]
@@ -28,12 +31,17 @@ export interface SetlistWorkspaceProps {
   onPlaySetlistPosition?: (setlistId: string | number, position: number) => void
   /** Opens the exact occurrence using the existing setlist queue. */
   onOpenSong?: (setlistId: string | number, position: number) => void
-  /** Manage flow: the #312 S2 Setlist Manager in DEV. */
+  /** Manage flow: retained as fallback if caller passes it. */
   onManageSetlist?: (setlist: WebSetlist) => void
   onRequestTrashSetlist?: (id: string | number) => void
   onRenameSetlist?: (setlistId: string | number, name: string) => boolean
   onDeleteSetlist?: (setlistId: string | number) => boolean
   onNewSetlist?: () => void
+  onMoveSong?: (setlistId: string | number, index: number, direction: 'up' | 'down') => boolean
+  onRemoveSong?: (setlistId: string | number, index: number) => boolean
+  /** One guarded add of every song id, in order. */
+  onAddSongs?: (setlistId: string | number, songIds: Array<string | number>) => boolean | Promise<boolean>
+  shortcutsBlocked?: boolean
   /** Scope-bar ⋯ menu: GTAR-only setlist controls, each bound to its existing handler. */
   menu?: SetlistWorkspaceMenu
 }
@@ -52,7 +60,7 @@ export interface SetlistWorkspaceMenu {
   /** #320: full setlists JSON export / backup. */
   onExportAllSetlists?: () => void
   onNewSetlist?: () => void
-  /** Receives the open setlist (null in the collection view). */
+  /** @deprecated Retired under GH579 Phase 1 */
   onManageSetlists?: (openSetlist: WebSetlist | null) => void
 }
 
@@ -77,7 +85,7 @@ interface EntryView {
 }
 
 export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
-  scope, folderName,
+  scope, folderName, folders, onSetlistFolderChange,
   setlists,
   songs,
   openSetlistId: controlledOpenSetlistId,
@@ -85,11 +93,14 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   onSelectScope,
   onPlaySetlistPosition,
   onOpenSong,
-  onManageSetlist,
   onRenameSetlist,
   onDeleteSetlist,
   onRequestTrashSetlist,
   onNewSetlist,
+  onMoveSong,
+  onRemoveSong,
+  onAddSongs,
+  shortcutsBlocked = false,
   menu,
 }) => {
   const handleNewSetlist = onNewSetlist ?? menu?.onNewSetlist
@@ -103,6 +114,10 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null)
   const [editingSetlistId, setEditingSetlistId] = useState<string | number | null>(null)
   const [setlistNameInput, setSetlistNameInput] = useState('')
+  const [isPickerOpen, setIsPickerOpen] = useState(false)
+  const searchTriggerRef = useRef<HTMLButtonElement>(null)
+  const [editingOpenSetlistName, setEditingOpenSetlistName] = useState(false)
+  const [openSetlistNameInput, setOpenSetlistNameInput] = useState('')
 
   const handleSaveSetlistName = (setlistId: string | number) => {
     const trimmed = setlistNameInput.trim()
@@ -121,6 +136,41 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   useEffect(() => {
     if (controlledOpenSetlistId != null && !openSetlist) onOpenSetlistChange?.(null)
   }, [controlledOpenSetlistId, openSetlist, onOpenSetlistChange])
+  const [prevOpenSetlistId, setPrevOpenSetlistId] = useState(openSetlistId)
+  if (prevOpenSetlistId !== openSetlistId) {
+    setPrevOpenSetlistId(openSetlistId)
+    setEditingOpenSetlistName(false)
+  }
+
+  const handleSaveOpenSetlistName = () => {
+    if (!openSetlist) return
+    const trimmed = openSetlistNameInput.trim()
+    if (trimmed && onRenameSetlist) {
+      onRenameSetlist(openSetlist.id, trimmed)
+    }
+    setEditingOpenSetlistName(false)
+  }
+
+  const handlePickerAdd = async (picked: ActiveSongState[]) => {
+    if (!openSetlist || !onAddSongs) return false
+    const ids = picked.map(s => s.id).filter((id): id is string | number => id !== undefined)
+    const ok = await onAddSongs(openSetlist.id, ids)
+    return ok
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase()
+      const ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey && key === 'k'
+      if (!ctrlK || !openSetlist || shortcutsBlocked) return
+      const target = e.target as HTMLElement | null
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) && target.id !== 'multi-song-search-input') return
+      e.preventDefault()
+      setIsPickerOpen(open => !open)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [openSetlist, shortcutsBlocked])
   const songIndex = useMemo(() => songIdIndex(songs), [songs])
 
   // Missing or trashed songs stay visible for context but cannot be played or opened.
@@ -192,17 +242,6 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                     </option>
                   ))}
                 </select>
-                {menu.onManageSetlists && (
-                  <button
-                    type="button"
-                    data-testid="toggle-setlist-selection-mode"
-                    onClick={() => menu.onManageSetlists?.(null)}
-                    className="col-start-2 row-start-1 justify-self-end ui-button min-h-[42px] h-[42px] px-3 bg-app-button hover:brightness-110 border border-app-border rounded-xl text-xs text-app-button-text font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                  >
-                    <Layers className="w-3.5 h-3.5 text-app-section" />
-                    <span>Manage</span>
-                  </button>
-                )}
               </>
             )}
             <div className={`${openSetlist ? 'row-start-1' : 'row-start-2'} col-start-2 justify-self-end flex items-center gap-1.5`}>
@@ -243,18 +282,91 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
         <div className="space-y-3">
           <div
             data-testid="workspace-setlist-header"
-            className="ui-setlist-card flex flex-wrap items-center justify-between gap-3 p-3.5 bg-app-setlist border border-app-border rounded-2xl"
+            className="ui-setlist-card flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-3.5 bg-app-setlist border border-app-border rounded-2xl"
           >
-            <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-3 min-w-0 w-full md:w-auto md:flex-1">
               <div className="w-10 h-10 rounded-xl bg-app-section/15 text-app-section flex items-center justify-center shrink-0">
                 <ListMusic className="w-6 h-6" />
               </div>
-              <div className="min-w-0">
-                <h1 className="ui-primary-text text-lg font-bold text-app-heading truncate">{openSetlist.name}</h1>
-                <p className="text-xs text-app-muted">{entries.length} performance entries</p>
+              <div className="min-w-0 flex-1">
+                {editingOpenSetlistName ? (
+                  <form
+                    onSubmit={e => { e.preventDefault(); handleSaveOpenSetlistName() }}
+                    className="flex items-center gap-1.5 min-w-0"
+                  >
+                    <input
+                      type="text"
+                      autoFocus
+                      value={openSetlistNameInput}
+                      onChange={e => setOpenSetlistNameInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Escape') {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setEditingOpenSetlistName(false)
+                        }
+                      }}
+                      data-testid="workspace-rename-input"
+                      className="px-2 py-0.5 rounded border border-app-border bg-app-base text-sm font-bold text-app-heading min-w-0 flex-1 max-w-xs focus:outline-none focus:border-app-action"
+                    />
+                    <button
+                      type="submit"
+                      data-testid="workspace-rename-save"
+                      className="min-h-9 px-2.5 py-0.5 rounded bg-app-action text-app-on-action text-xs font-semibold cursor-pointer hover:brightness-110"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="workspace-rename-cancel"
+                      onClick={() => setEditingOpenSetlistName(false)}
+                      className="min-h-9 px-2 py-0.5 rounded bg-app-base text-app-muted hover:text-app-heading text-xs cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </form>
+                ) : (
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h1 data-testid="workspace-setlist-name" className="ui-primary-text text-base sm:text-lg font-bold text-app-heading truncate">
+                      {openSetlist.name}
+                    </h1>
+                    <button
+                      type="button"
+                      aria-label={`Rename setlist ${openSetlist.name}`}
+                      data-testid="workspace-rename-setlist"
+                      onClick={() => {
+                        setOpenSetlistNameInput(openSetlist.name)
+                        setEditingOpenSetlistName(true)
+                      }}
+                      className="p-1 rounded hover:bg-app-base text-app-muted hover:text-app-heading transition-colors cursor-pointer shrink-0"
+                    >
+                      <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+                  <p data-testid="workspace-setlist-count" className="text-xs text-app-muted">
+                    {entries.length} {entries.length === 1 ? 'performance entry' : 'performance entries'}
+                  </p>
+                  {onSetlistFolderChange && (
+                    <label className="flex items-center gap-1.5 text-xs text-app-muted min-w-0">
+                      <span>Folder</span>
+                      <select
+                        aria-label="Setlist folder"
+                        data-testid="workspace-setlist-folder-select"
+                        value={openSetlist.folderId ?? ''}
+                        onChange={e => onSetlistFolderChange(openSetlist.id, e.target.value || null)}
+                        className="bg-app-base border border-app-border rounded px-1.5 py-0.5 text-xs text-app-text outline-none focus:border-app-action cursor-pointer"
+                      >
+                        <option value="">Unfiled</option>
+                        {folders?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                      </select>
+                    </label>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 border-t border-app-border/40 md:border-t-0 md:pt-0">
               {entries.length > 0 && (
                 <button
                   type="button"
@@ -263,18 +375,21 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                   onClick={() => { if (firstPlayable >= 0) onPlaySetlistPosition?.(openSetlist.id, firstPlayable) }}
                   className={`${touch} px-3.5 rounded-xl bg-app-action hover:brightness-110 text-app-on-action text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
-                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <Play className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
                   <span>Play in Stage</span>
                 </button>
               )}
               <button
+                ref={searchTriggerRef}
                 type="button"
-                data-testid="workspace-edit-setlist"
-                onClick={() => onManageSetlist?.(openSetlist)}
+                data-testid="workspace-search-songs"
+                aria-label="Search Songs"
+                aria-keyshortcuts="Control+K"
+                onClick={() => setIsPickerOpen(open => !open)}
                 className={`ui-button ${touch} px-3.5 rounded-xl bg-app-button hover:brightness-110 text-app-button-text text-xs font-semibold border border-app-border transition-colors flex items-center gap-1.5 cursor-pointer`}
               >
-                <Edit2 className="w-3.5 h-3.5" />
-                <span>Edit in Setlist Manager</span>
+                <Search className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Search Songs</span>
               </button>
               {menu?.onShareSetlist && (
                 <button
@@ -308,10 +423,19 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
             <div data-testid="workspace-empty-setlist" className={emptyState}>
               <Music className="w-8 h-8 text-app-muted mx-auto mb-2" />
               <h3 className="text-sm font-semibold text-app-heading">This setlist has no songs yet</h3>
-              <p className="text-xs text-app-muted mt-1">Add songs from the Songbook using the setlist membership menu.</p>
+              <p className="text-xs text-app-muted mt-1">Use Search Songs to add some.</p>
+              <button
+                type="button"
+                data-testid="workspace-empty-search-songs"
+                onClick={() => setIsPickerOpen(true)}
+                className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-app-action text-app-on-action text-xs font-bold hover:brightness-110 cursor-pointer shadow-sm"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>Search Songs</span>
+              </button>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               {entries.map((entry, idx) => {
                 const unavailable = entry.libraryIndex === null
                 const open = () => { if (!unavailable) onOpenSong?.(openSetlist.id, idx) }
@@ -321,34 +445,60 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                     data-testid={`workspace-entry-${idx}`}
                     aria-disabled={unavailable ? 'true' : undefined}
                     onClick={open}
-                    className={`ui-song-card group flex items-center justify-between gap-3 p-3 rounded-xl bg-app-song border border-app-border transition-all shadow-sm ${
+                    className={`ui-song-card group flex items-center justify-between gap-2 sm:gap-3 py-1.5 px-2.5 sm:p-3 rounded-xl bg-app-song border border-app-border transition-all shadow-sm ${
                       unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:brightness-95 cursor-pointer'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="w-6 shrink-0 text-center text-xs font-bold text-app-muted group-hover:text-app-link">{idx + 1}</span>
-                      <div className="min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <span className="w-5 sm:w-6 shrink-0 text-center text-xs font-mono font-bold text-app-muted group-hover:text-app-link">
+                        {idx + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
                         <div className="ui-primary-text text-sm font-bold text-app-heading group-hover:text-app-link transition-colors truncate">
                           {entry.title}
                         </div>
-                        <div className="ui-secondary-text text-xs text-app-muted truncate">
+                        <div className="ui-secondary-text text-[11px] sm:text-xs text-app-muted flex flex-wrap items-center gap-x-2 truncate">
                           {unavailable ? (
                             <span className="text-app-muted font-semibold">Song missing{entry.artist ? ` · ${entry.artist}` : ''}</span>
                           ) : (
-                            entry.artist || 'Unknown Artist'
+                            <span>{entry.artist || 'Unknown Artist'}</span>
+                          )}
+                          {entry.performanceKey && (
+                            <span
+                              data-testid={`workspace-entry-key-${idx}`}
+                              className="px-1.5 py-0.2 rounded bg-app-base border border-app-border text-app-accent font-mono font-bold text-[10px] sm:text-xs"
+                            >
+                              {entry.performanceKey}
+                            </span>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      {entry.performanceKey && (
-                        <span
-                          data-testid={`workspace-entry-key-${idx}`}
-                          className="px-2 py-0.5 rounded-md bg-app-base border border-app-border text-app-accent text-xs font-mono font-bold"
-                        >
-                          {entry.performanceKey}
-                        </span>
+                    <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                      {onMoveSong && (
+                        <>
+                          <button
+                            type="button"
+                            data-testid={`workspace-entry-${idx}-up`}
+                            disabled={idx === 0}
+                            onClick={e => { e.stopPropagation(); onMoveSong(openSetlist.id, idx, 'up') }}
+                            aria-label={`Move ${entry.title} up`}
+                            className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-base border border-app-border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`workspace-entry-${idx}-down`}
+                            disabled={idx === entries.length - 1}
+                            onClick={e => { e.stopPropagation(); onMoveSong(openSetlist.id, idx, 'down') }}
+                            aria-label={`Move ${entry.title} down`}
+                            className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-app-muted hover:text-app-heading hover:bg-app-base border border-app-border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                        </>
                       )}
                       <button
                         type="button"
@@ -356,9 +506,9 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                         disabled={unavailable}
                         onClick={e => { e.stopPropagation(); if (!unavailable) onPlaySetlistPosition?.(openSetlist.id, idx) }}
                         aria-label={`Play ${entry.title} in Stage`}
-                        className={`${touch} rounded-lg bg-app-action hover:brightness-110 text-app-on-action transition-colors flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+                        className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-app-action hover:brightness-110 text-app-on-action transition-colors flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <Play className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
                       </button>
                       <button
                         type="button"
@@ -366,10 +516,21 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                         disabled={unavailable}
                         onClick={e => { e.stopPropagation(); open() }}
                         aria-label={`Open ${entry.title}`}
-                        className={`ui-button ${touch} rounded-lg bg-app-button hover:brightness-110 text-app-button-text border border-app-border transition-colors flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+                        className="ui-button w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-app-button hover:brightness-110 text-app-button-text border border-app-border transition-colors flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        <Music className="w-3.5 h-3.5" />
+                        <Music className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
+                      {onRemoveSong && (
+                        <button
+                          type="button"
+                          data-testid={`workspace-entry-${idx}-remove`}
+                          onClick={e => { e.stopPropagation(); onRemoveSong(openSetlist.id, idx) }}
+                          aria-label={`Remove ${entry.title} from setlist`}
+                          className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-app-muted hover:text-status-error hover:bg-status-error/10 border border-app-border transition-colors cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" aria-hidden="true" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 )
@@ -505,49 +666,43 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                           </>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span
-                          data-testid={`workspace-setlist-count-${sl.id}`}
-                          className="shrink-0 text-[10px] text-app-muted px-2 py-0.5 rounded-full bg-app-base border border-app-border"
-                        >
-                          {count} {count === 1 ? 'song' : 'songs'}
-                        </span>
+                      <div className="flex items-center gap-1 shrink-0">
                         {menu?.onShareSetlist && (
                           <button
                             type="button"
                             aria-label={`Share setlist ${sl.name}`}
                             data-testid={`desktop-share-setlist-${sl.id}`}
                             onClick={e => { e.stopPropagation(); menu.onShareSetlist?.(sl) }}
-                            className={`${touch} setlist-hover-share opacity-0 group-hover:opacity-100 focus-visible:opacity-100 px-2 rounded-lg text-app-action hover:bg-app-action/10 transition-opacity flex items-center justify-center cursor-pointer`}
+                            className={`${touch} setlist-hover-share opacity-0 group-hover:opacity-100 focus-visible:opacity-100 px-1.5 rounded-lg text-app-action hover:bg-app-action/10 transition-opacity flex items-center justify-center cursor-pointer`}
                           >
                             <Share2 className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                        )}
+                        {(onRequestTrashSetlist || onDeleteSetlist) && (
+                          <button
+                            type="button"
+                            aria-label={`Move setlist ${sl.name} to Trash`}
+                            data-testid={`desktop-delete-setlist-${sl.id}`}
+                            onClick={e => {
+                              e.stopPropagation()
+                              if (onRequestTrashSetlist) onRequestTrashSetlist(sl.id)
+                              else onDeleteSetlist?.(sl.id)
+                            }}
+                            className={`${touch} setlist-hover-delete opacity-0 group-hover:opacity-100 focus-visible:opacity-100 px-1.5 rounded-lg text-status-error hover:bg-status-error/10 transition-colors flex items-center justify-center cursor-pointer`}
+                          >
+                            <Trash2 className="w-4 h-4" aria-hidden="true" />
                           </button>
                         )}
                       </div>
                     </div>
                     <div className="mt-2.5 pt-1 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
                       {created ? <span data-testid={`workspace-setlist-date-${sl.id}`}>Created {created}</span> : <span />}
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          data-testid={`workspace-manage-${sl.id}`}
-                          onClick={e => { e.stopPropagation(); onManageSetlist?.(sl) }}
-                          className={`${touch} setlist-manage-action px-2 rounded-lg text-app-link hover:underline font-semibold cursor-pointer flex items-center`}
-                        >
-                          Manage →
-                        </button>
-                        {onRequestTrashSetlist && (
-                          <button
-                            type="button"
-                            aria-label={`Move setlist ${sl.name} to Trash`}
-                            data-testid={`desktop-delete-setlist-${sl.id}`}
-                            onClick={e => { e.stopPropagation(); onRequestTrashSetlist(sl.id) }}
-                            className={`${touch} setlist-hover-delete px-2 rounded-lg text-status-error hover:bg-status-error/10 transition-colors flex items-center justify-center cursor-pointer`}
-                          >
-                            <Trash2 className="w-4 h-4" aria-hidden="true" />
-                          </button>
-                        )}
-                      </div>
+                      <span
+                        data-testid={`workspace-setlist-count-${sl.id}`}
+                        className="shrink-0 text-[10px] text-app-muted px-2 py-0.5 rounded-full bg-app-base border border-app-border"
+                      >
+                        {count} {count === 1 ? 'song' : 'songs'}
+                      </span>
                     </div>
                     {confirmDeleteId === sl.id && (
                       <div onClick={e => e.stopPropagation()}
@@ -578,6 +733,16 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
         </div>
       )}
       </div>
+      {openSetlist && isPickerOpen && (
+        <MultiSongSetlistPicker
+          isOpen={isPickerOpen}
+          onClose={() => setIsPickerOpen(false)}
+          currentSetlist={openSetlist}
+          allSongs={songs}
+          onAddSongs={handlePickerAdd}
+          triggerRef={searchTriggerRef}
+        />
+      )}
     </div>
   )
 }
@@ -628,18 +793,6 @@ const ScopeMenu: React.FC<{ menu: SetlistWorkspaceMenu; openSetlist: WebSetlist 
           onClick={run(() => menu.onExportSetlist!(openSetlist))} className={menuItem}>
           <Upload className={`${menuIcon} rotate-180`} />
           <span>Export Setlist</span>
-        </button>
-      )}
-      {menu.onManageSetlists && (
-        <button
-          type="button"
-          role="menuitem"
-          data-testid="workspace-menu-manage"
-          onClick={run(() => menu.onManageSetlists!(openSetlist))}
-          className={`${menuItem} border-t border-app-border/50`}
-        >
-          <Layers className={menuIcon} />
-          <span>Manage Setlists</span>
         </button>
       )}
     </div>

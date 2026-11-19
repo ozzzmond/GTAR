@@ -78,7 +78,7 @@ test('S1_COLLECTION: All Setlists target renders the GTAR1 collection view with 
   assert.match(first.textContent, /Gig Set A/)
   assert.match($('[data-testid="workspace-setlist-count-sl-1"]').textContent, /^3 songs$/)
   assert.match($('[data-testid="workspace-setlist-count-sl-2"]').textContent, /^1 song$/)
-  assert.ok($('[data-testid="workspace-manage-sl-1"]').textContent.includes('Manage →'))
+  assert.equal(Boolean($('[data-testid="workspace-manage-sl-1"]')), false, 'Redundant Manage → button is removed from cards')
   assert.equal($('[data-testid="song-setlists-panel"]'), null)
   assert.equal($('[data-testid="setlist-controls-toolbar"]'), null, 'legacy panel is replaced in the workspace')
 })
@@ -119,7 +119,9 @@ test('S1_SETLIST: clicking a card opens the single-setlist view with header and 
   assert.match(header.textContent, /Gig Set A/)
   assert.match(header.textContent, /3 performance entries/)
   assert.ok($('[data-testid="workspace-play-setlist"]'))
-  assert.ok($('[data-testid="workspace-edit-setlist"]').textContent.includes('Edit in Setlist Manager'))
+  assert.ok($('[data-testid="workspace-search-songs"]'))
+  assert.ok($('[data-testid="workspace-rename-setlist"]'))
+  assert.equal($('[data-testid="workspace-edit-setlist"]'), null, 'separate manager launcher is retired')
   const rows = $$('[data-testid^="workspace-entry-"]').filter(el => /^workspace-entry-\d+$/.test(el.getAttribute('data-testid')))
   assert.equal(rows.length, 3)
   assert.match(rows[0].textContent, /^1/)
@@ -183,14 +185,13 @@ test('S1_SETLIST: header Play in Stage starts at the first available entry', asy
   assert.deepEqual(played, [['sl-x', 1]])
 })
 
-test('S1_SETLIST: Edit in Setlist Manager and card Manage → call the existing GTAR manage flow', async () => {
-  const managed = []
-  await mount(baseProps({ view: { type: 'ALL_SETLISTS' }, onManageSetlist: sl => managed.push(sl.id) }))
-  await click($('[data-testid="workspace-manage-sl-2"]'))
-  assert.equal($('[data-testid="workspace-setlist-header"]'), null, 'Manage → does not also open the card')
+test('S1_SETLIST: card Manage → is removed, and opening card shows integrated controls', async () => {
+  await mount(baseProps({ view: { type: 'ALL_SETLISTS' } }))
+  assert.equal(Boolean($('[data-testid="workspace-manage-sl-2"]')), false, 'Manage → action is removed from card')
   await click($('[data-testid="workspace-setlist-card-sl-1"]'))
-  await click($('[data-testid="workspace-edit-setlist"]'))
-  assert.deepEqual(managed, ['sl-2', 'sl-1'])
+  assert.ok($('[data-testid="workspace-setlist-header"]'), 'integrated header is rendered when opening card')
+  assert.ok($('[data-testid="workspace-search-songs"]'), 'Search Songs is directly integrated in header')
+  assert.ok($('[data-testid="workspace-rename-setlist"]'), 'Rename is directly integrated in header')
 })
 
 test('S1_SETLIST: empty setlist shows the dashed empty state and no Play in Stage', async () => {
@@ -258,7 +259,7 @@ test('S1_MENU: collection ⋯ menu holds Sort, Import and Manage; dedicated shar
   await openMenu()
   assert.deepEqual(menuItems(), [
     'workspace-sort-manual', 'workspace-sort-title_asc', 'workspace-sort-title_desc',
-    'workspace-menu-import', 'workspace-menu-manage',
+    'workspace-menu-import',
   ], 'Newest/Oldest stay hidden without reliable timestamps (existing Sort rule)')
   assert.equal($('[data-testid="workspace-sort-manual"]').getAttribute('aria-checked'), 'true')
 
@@ -278,10 +279,6 @@ test('S1_MENU: collection ⋯ menu holds Sort, Import and Manage; dedicated shar
   // Import → existing setlist import dialog
   await openMenu(); await click($('[data-testid="workspace-menu-import"]'))
   assert.ok($('[data-testid="setlist-import-dialog"]'), 'Import opens the existing setlist import dialog')
-
-  // Manage Setlists → existing manage flow
-  await openMenu(); await click($('[data-testid="workspace-menu-manage"]'))
-  assert.deepEqual(opened, ['manage'])
 })
 
 test('S1_MENU: single-setlist ⋯ menu imports, exports and manages; dedicated sharing through existing handlers', async () => {
@@ -295,13 +292,11 @@ test('S1_MENU: single-setlist ⋯ menu imports, exports and manages; dedicated s
   await click($('[data-testid="workspace-setlist-card-sl-1"]'))
   await openMenu()
   assert.deepEqual(menuItems(), ['workspace-menu-import',
-    'workspace-menu-export-json', 'workspace-menu-manage'])
+    'workspace-menu-export-json'])
   assert.equal($('[data-testid="workspace-menu-share"]'), null)
   assert.equal($('[data-testid="workspace-menu-import"]').textContent.trim(), 'Import Setlist')
   assert.equal($('[data-testid="workspace-menu-export-json"]').textContent.trim(), 'Export Setlist')
   await click($('[data-testid="workspace-setlist-header"] [aria-label="Share Setlist"]'))
-  await openMenu(); await click($('[data-testid="workspace-menu-manage"]'))
-  assert.deepEqual(calls, [['share', 'sl-1'], ['manage']])
   await openMenu(); await click($('[data-testid="workspace-menu-import"]'))
   assert.ok($('[data-testid="setlist-import-dialog"]'))
   for (const item of $$('[data-testid="workspace-scope-menu"] [role^="menuitem"]')) assert.match(item.className, /min-h-9|min-h-11/)
@@ -328,14 +323,20 @@ test('S4_FOLDER: folder scopes and Unfiled filter the existing workspace without
   assert.deepEqual($$('[data-testid^="workspace-setlist-card-"]').map(card=>card.dataset.testid),['workspace-setlist-card-sl-2','workspace-setlist-card-sl-3'])
 })
 
-test('desktop Trash action requests selected setlist without opening or deleting it and is integrated next to Manage', async () => {
+test('desktop Trash action requests selected setlist without opening or deleting it and is integrated on top row', async () => {
   const requests = [], mutations = []
-  await mount(baseProps({ onRequestTrashSetlist: id => requests.push(id), onDeleteSetlist: id => mutations.push(id) }))
+  await mount(baseProps({
+    onRequestTrashSetlist: id => requests.push(id),
+    onDeleteSetlist: id => mutations.push(id),
+    onShareSetlist: () => {},
+  }))
   const button = document.querySelector('[data-testid="desktop-delete-setlist-sl-1"]')
   const manage = document.querySelector('[data-testid="workspace-manage-sl-1"]')
   assert.ok(button)
-  assert.ok(manage)
-  assert.equal(button.parentElement, manage.parentElement, 'delete and manage share the same action row container')
+  assert.equal(Boolean(manage), false, 'Manage → is removed')
+  const share = document.querySelector('[data-testid="desktop-share-setlist-sl-1"]')
+  assert.ok(share)
+  assert.equal(button.parentElement, share.parentElement, 'delete and share share the top row action container')
   assert.equal(button.getAttribute('aria-label'), 'Move setlist Gig Set A to Trash')
   button.focus()
   assert.equal(document.activeElement, button)

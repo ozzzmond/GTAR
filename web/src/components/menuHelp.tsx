@@ -107,11 +107,11 @@ export const SetlistsHelp: React.FC<MenuHelpProps> = (props) => (
     quickSummary="Build, share and manage the setlists you play from."
     topics={topics([
       ['Sort', 'Order the setlist cards by your manual order, by title or by date.'],
-      ['Manage', 'Opens the Setlist Manager to rename a setlist, add songs and change their order.'],
+      ['Manage', 'Open a setlist to rename it, search and add songs, change their order, or play in Stage.'],
       ['Share', 'Creates a link or QR code so someone else can import the setlist.'],
       ['Import Setlist', 'In the ⋯ menu. Adds a setlist that was shared with you, from a link or a file.'],
       ['Export Setlist', 'In the ⋯ menu of an open setlist. Saves it as a file you can keep or send.'],
-      ['Add new setlist', 'Creates an empty setlist. Add songs to it in the Setlist Manager.'],
+      ['Add new setlist', 'Creates an empty setlist. Search and add songs to build your set.'],
       ['Inside a setlist', 'Play in Stage starts from the first song and follows the setlist order. The trash button moves the setlist to the Trash; your songs stay in the Songbook.'],
     ])}
   />

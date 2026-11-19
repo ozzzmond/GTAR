@@ -865,8 +865,7 @@ function LibraryApp() {
 
   const handleManageSetlist = (setlist: WebSetlist) => openSetlistManager(setlist)
 
-  // #312 S2 (DEV): GTAR1 Setlist Manager. Each change is one guarded write (stale-write guard);
-  // a handler returns false and reports the failure when nothing was saved.
+  // #312 S2 / #579 Phase 1: GTAR1 Setlist Manager retained as fallback for existing consumers.
   const [isSetlistManagerOpen, setIsSetlistManagerOpen] = useState(false)
   const [setlistManagerId, setSetlistManagerId] = useState<string | number | null>(null)
   const [setlistManagerOpener, setSetlistManagerOpener] = useState<HTMLElement | null>(null)
@@ -981,6 +980,9 @@ function LibraryApp() {
       setQueueMode('library')
     }
     setSetlistManagerId(null)
+    if (String(workspaceSetlistId) === String(setlistId)) {
+      setWorkspaceSetlistId(null)
+    }
     return true
   }
   const handleManagerMove = (setlistId: string | number, index: number, direction: 'up' | 'down') => {
@@ -1652,6 +1654,11 @@ function LibraryApp() {
             onDeleteSong={handleDeleteSong}
             onRenameSetlist={handleManagerRename}
             onDeleteSetlist={handleManagerDelete}
+            onMoveSong={handleManagerMove}
+            onRemoveSong={handleManagerRemove}
+            onAddSongs={handleManagerAddSongs}
+            onSetlistFolderChange={handleSetlistFolderChange}
+            shortcutsBlocked={isStagePerformanceMode}
             setlists={setlists}
             onSelectSetlistSong={(setlistId, songIdx) => {
               handleSelectSetlistSong(setlistId, songIdx)
@@ -1734,8 +1741,7 @@ function LibraryApp() {
                 isHeaderKeyPickerOpen ||
                 isTvPresentationModalOpen ||
                 isHeaderOverlayOpen ||
-                recoveryDataOpen ||
-                isSetlistManagerOpen
+                recoveryDataOpen
               }
               onBack={() => setActiveView('songbook')}
               onOpenEditor={() => navigateSafely(() => setActiveView('editor'))}
