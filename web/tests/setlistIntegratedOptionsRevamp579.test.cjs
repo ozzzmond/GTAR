@@ -347,4 +347,108 @@ test('RETIREMENT_PARITY: separate Setlist Manager UI entry points are removed', 
   const workspaceSrc = fs.readFileSync(path.join(__dirname, '../src/components/SetlistWorkspace.tsx'), 'utf8')
   assert.equal(workspaceSrc.includes('workspace-edit-setlist'), false, 'no workspace-edit-setlist launcher button')
   assert.equal(workspaceSrc.includes('workspace-menu-manage'), false, 'no workspace-menu-manage launcher menu item')
+  assert.equal(workspaceSrc.includes('workspace-manage-'), false, 'no workspace-manage action button in cards')
+})
+
+test('ROUND_2_FIX_1_AND_2: All Setlists card layout has Share and Delete on top row, Created and Count on bottom row, and no Manage action', async () => {
+  let openedId = null
+  let sharedSl = null
+  let trashedId = null
+
+  await mountWorkspace({
+    openSetlistId: null,
+    onOpenSetlistChange: id => { openedId = id },
+    onRequestTrashSetlist: id => { trashedId = id },
+    menu: {
+      sortValue: 'recent',
+      sortOptions: [{ value: 'recent', label: 'Recent' }],
+      onSortChange() {},
+      onShareSetlist: sl => { sharedSl = sl },
+    },
+  })
+
+  // FIX_1: No redundant Manage action
+  assert.equal(Boolean($('[data-testid="workspace-manage-sl-1"]')), false, 'card does not render Manage button')
+  assert.equal(Boolean($('[data-testid="workspace-manage-sl-empty"]')), false, 'empty setlist card does not render Manage button')
+
+  // FIX_2: TOP_ROW has icon, title, rename, share, delete
+  const card = $('[data-testid="workspace-setlist-card-sl-1"]')
+  assert.ok(card)
+
+  const shareBtn = $('[data-testid="desktop-share-setlist-sl-1"]')
+  const deleteBtn = $('[data-testid="desktop-delete-setlist-sl-1"]')
+  const renameBtn = $('[data-testid="desktop-rename-setlist-sl-1"]')
+  assert.ok(shareBtn, 'Share button exists in card')
+  assert.ok(deleteBtn, 'Delete button exists in card')
+  assert.ok(renameBtn, 'Rename button exists in card')
+  assert.equal(shareBtn.parentElement, deleteBtn.parentElement, 'Share and Delete are grouped in top-right container')
+
+  // FIX_2: BOTTOM_ROW has created date on left and count on right
+  const dateEl = $('[data-testid="workspace-setlist-date-sl-1"]')
+  const countEl = $('[data-testid="workspace-setlist-count-sl-1"]')
+  assert.ok(dateEl, 'Created date exists in card bottom row')
+  assert.ok(countEl, 'Song count exists in card bottom row')
+  assert.equal(dateEl.parentElement, countEl.parentElement, 'Date and count are grouped in bottom row container')
+  assert.equal(countEl.textContent.trim(), '3 songs')
+
+  // Verify actions do not trigger card opening (stopPropagation)
+  await click(shareBtn)
+  assert.equal(sharedSl?.id, 'sl-1')
+  assert.equal(openedId, null, 'clicking share does not open card')
+
+  await click(deleteBtn)
+  assert.equal(trashedId, 'sl-1')
+  assert.equal(openedId, null, 'clicking delete does not open card')
+
+  // Clicking card opens setlist
+  await click(card)
+  assert.equal(openedId, 'sl-1', 'clicking card opens setlist')
+})
+
+test('ROUND_2_FIX_3: Single setlist header uses responsive multi-row layout priorities', async () => {
+  await mountWorkspace({
+    openSetlistId: 'sl-1',
+    menu: {
+      sortValue: 'recent',
+      sortOptions: [{ value: 'recent', label: 'Recent' }],
+      onSortChange() {},
+      onShareSetlist() {},
+    },
+    onRequestTrashSetlist() {},
+  })
+
+  const header = $('[data-testid="workspace-setlist-header"]')
+  assert.ok(header)
+  assert.match(header.className, /flex-col md:flex-row/, 'header uses flex-col for compact screens and md:flex-row for desktop')
+
+  // Priority 1: Title and Rename
+  const title = $('[data-testid="workspace-setlist-name"]')
+  const rename = $('[data-testid="workspace-rename-setlist"]')
+  assert.ok(title)
+  assert.ok(rename)
+
+  // Priority 2: Count and Folder selector
+  const count = $('[data-testid="workspace-setlist-count"]')
+  const folder = $('[data-testid="workspace-setlist-folder-select"]')
+  assert.ok(count)
+  assert.ok(folder)
+
+  // Priority 3: Play in Stage and Search Songs
+  const play = $('[data-testid="workspace-play-setlist"]')
+  const search = $('[data-testid="workspace-search-songs"]')
+  assert.ok(play)
+  assert.ok(search)
+
+  // Priority 4: Share and Delete
+  const share = $('[data-testid="workspace-share-setlist"]')
+  const del = $('[data-testid="workspace-delete-setlist"]')
+  assert.ok(share)
+  assert.ok(del)
+
+  // Check DOM order conforms to priority 1 -> 2 -> 3 -> 4
+  const allElements = [title, count, folder, play, search, share, del]
+  for (let i = 0; i < allElements.length - 1; i++) {
+    const pos = allElements[i].compareDocumentPosition(allElements[i + 1])
+    assert.ok(pos & dom.window.Node.DOCUMENT_POSITION_FOLLOWING, `element ${i} precedes element ${i + 1} in DOM`)
+  }
 })

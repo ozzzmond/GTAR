@@ -93,7 +93,6 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
   onSelectScope,
   onPlaySetlistPosition,
   onOpenSong,
-  onManageSetlist,
   onRenameSetlist,
   onDeleteSetlist,
   onRequestTrashSetlist,
@@ -283,9 +282,9 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
         <div className="space-y-3">
           <div
             data-testid="workspace-setlist-header"
-            className="ui-setlist-card flex flex-wrap items-center justify-between gap-3 p-3.5 bg-app-setlist border border-app-border rounded-2xl"
+            className="ui-setlist-card flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-3.5 bg-app-setlist border border-app-border rounded-2xl"
           >
-            <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="flex items-center gap-3 min-w-0 w-full md:w-auto md:flex-1">
               <div className="w-10 h-10 rounded-xl bg-app-section/15 text-app-section flex items-center justify-center shrink-0">
                 <ListMusic className="w-6 h-6" />
               </div>
@@ -328,7 +327,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                   </form>
                 ) : (
                   <div className="flex items-center gap-2 min-w-0">
-                    <h1 data-testid="workspace-setlist-name" className="ui-primary-text text-lg font-bold text-app-heading truncate">
+                    <h1 data-testid="workspace-setlist-name" className="ui-primary-text text-base sm:text-lg font-bold text-app-heading truncate">
                       {openSetlist.name}
                     </h1>
                     <button
@@ -367,7 +366,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 border-t border-app-border/40 md:border-t-0 md:pt-0">
               {entries.length > 0 && (
                 <button
                   type="button"
@@ -667,49 +666,43 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                           </>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span
-                          data-testid={`workspace-setlist-count-${sl.id}`}
-                          className="shrink-0 text-[10px] text-app-muted px-2 py-0.5 rounded-full bg-app-base border border-app-border"
-                        >
-                          {count} {count === 1 ? 'song' : 'songs'}
-                        </span>
+                      <div className="flex items-center gap-1 shrink-0">
                         {menu?.onShareSetlist && (
                           <button
                             type="button"
                             aria-label={`Share setlist ${sl.name}`}
                             data-testid={`desktop-share-setlist-${sl.id}`}
                             onClick={e => { e.stopPropagation(); menu.onShareSetlist?.(sl) }}
-                            className={`${touch} setlist-hover-share opacity-0 group-hover:opacity-100 focus-visible:opacity-100 px-2 rounded-lg text-app-action hover:bg-app-action/10 transition-opacity flex items-center justify-center cursor-pointer`}
+                            className={`${touch} setlist-hover-share opacity-0 group-hover:opacity-100 focus-visible:opacity-100 px-1.5 rounded-lg text-app-action hover:bg-app-action/10 transition-opacity flex items-center justify-center cursor-pointer`}
                           >
                             <Share2 className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                        )}
+                        {(onRequestTrashSetlist || onDeleteSetlist) && (
+                          <button
+                            type="button"
+                            aria-label={`Move setlist ${sl.name} to Trash`}
+                            data-testid={`desktop-delete-setlist-${sl.id}`}
+                            onClick={e => {
+                              e.stopPropagation()
+                              if (onRequestTrashSetlist) onRequestTrashSetlist(sl.id)
+                              else onDeleteSetlist?.(sl.id)
+                            }}
+                            className={`${touch} setlist-hover-delete opacity-0 group-hover:opacity-100 focus-visible:opacity-100 px-1.5 rounded-lg text-status-error hover:bg-status-error/10 transition-colors flex items-center justify-center cursor-pointer`}
+                          >
+                            <Trash2 className="w-4 h-4" aria-hidden="true" />
                           </button>
                         )}
                       </div>
                     </div>
                     <div className="mt-2.5 pt-1 border-t border-app-border flex items-center justify-between gap-2 text-xs text-app-muted">
                       {created ? <span data-testid={`workspace-setlist-date-${sl.id}`}>Created {created}</span> : <span />}
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          data-testid={`workspace-manage-${sl.id}`}
-                          onClick={e => { e.stopPropagation(); onManageSetlist?.(sl) }}
-                          className={`${touch} setlist-manage-action px-2 rounded-lg text-app-link hover:underline font-semibold cursor-pointer flex items-center`}
-                        >
-                          Manage →
-                        </button>
-                        {onRequestTrashSetlist && (
-                          <button
-                            type="button"
-                            aria-label={`Move setlist ${sl.name} to Trash`}
-                            data-testid={`desktop-delete-setlist-${sl.id}`}
-                            onClick={e => { e.stopPropagation(); onRequestTrashSetlist(sl.id) }}
-                            className={`${touch} setlist-hover-delete px-2 rounded-lg text-status-error hover:bg-status-error/10 transition-colors flex items-center justify-center cursor-pointer`}
-                          >
-                            <Trash2 className="w-4 h-4" aria-hidden="true" />
-                          </button>
-                        )}
-                      </div>
+                      <span
+                        data-testid={`workspace-setlist-count-${sl.id}`}
+                        className="shrink-0 text-[10px] text-app-muted px-2 py-0.5 rounded-full bg-app-base border border-app-border"
+                      >
+                        {count} {count === 1 ? 'song' : 'songs'}
+                      </span>
                     </div>
                     {confirmDeleteId === sl.id && (
                       <div onClick={e => e.stopPropagation()}

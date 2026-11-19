@@ -86,13 +86,15 @@ test('GH436_CHECKLIST_02: Setlists card exposes hover Rename and Share actions; 
     })
   )
 
-  // Setlist card: Share is in header row (before manage/delete in footer)
+  // Setlist card: Share and Delete are in top row (before date and count in bottom row)
   assert.ok(setlistHtml.includes('data-testid="desktop-rename-setlist-sl-1"'), 'Setlist card has desktop hover rename pencil')
   assert.ok(setlistHtml.includes('data-testid="desktop-share-setlist-sl-1"'), 'Setlist card has desktop hover share button')
   assert.ok(setlistHtml.includes('data-testid="desktop-delete-setlist-sl-1"'), 'Setlist card preserves desktop delete button')
+  assert.equal(setlistHtml.includes('data-testid="workspace-manage-sl-1"'), false, 'Redundant Manage → action removed under GH579')
   const sharePos = setlistHtml.indexOf('data-testid="desktop-share-setlist-sl-1"')
-  const managePos = setlistHtml.indexOf('data-testid="workspace-manage-sl-1"')
-  assert.ok(sharePos < managePos, 'Share button is located in the setlist header row, before footer manage')
+  const setlistDeletePos = setlistHtml.indexOf('data-testid="desktop-delete-setlist-sl-1"')
+  const datePos = setlistHtml.indexOf('data-testid="workspace-setlist-date-sl-1"')
+  assert.ok(sharePos < datePos && setlistDeletePos < datePos, 'Share and Delete buttons are located in top row, before bottom row date')
 
   const songs = [
     {
