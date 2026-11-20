@@ -184,3 +184,118 @@ test('STAGE_SEARCH_SAFE_NAVIGATION: choosing a result from Stage stays in Stage 
     } finally { global.fetch = previousFetch }
   })
 })
+
+test('VOICE_SEARCH: unsupported fallback, both constructors, one final write and lifecycle safety', async () => {
+  for (const constructorName of ['SpeechRecognition', 'webkitSpeechRecognition']) {
+    await ui(1280, async ({ render, click }) => {
+      const { Header } = load('../src/components/Header.tsx')
+      const writes = [], selections = [], instances = []
+      const props = headerProps({ searchQuery: 'keep', onSearchQueryChange: q => writes.push(q),
+        onSelectSearchSong: i => selections.push(i) })
+      await render(Header, props)
+      assert.equal(document.querySelector('[aria-label="Search by voice"]'), null)
+      class Mock {
+        constructor() { instances.push(this) }
+        start() { this.started = true }
+        abort() { this.aborted = true }
+      }
+      window[constructorName] = Mock
+      await render(Header, props)
+      const start = () => click(document.querySelector('[aria-label="Search by voice"]'))
+      const cancel = () => click(document.querySelector('[aria-label="Cancel voice search"]'))
+      await start()
+      const first = instances.at(-1), stale = first.onresult
+      assert.ok(first.started)
+      assert.equal(first.continuous, false)
+      assert.equal(first.interimResults, false)
+      const result = (text, isFinal = true) => ({ resultIndex: 0, results: [{ isFinal, 0: { transcript: text } }] })
+      await act(async () => first.onresult(result('ignored', false)))
+      assert.deepEqual(writes, [])
+      await act(async () => first.onresult(result('  ' + 'a'.repeat(210) + '  ')))
+      await act(async () => stale(result('duplicate')))
+      assert.deepEqual(writes, ['a'.repeat(200)])
+      assert.deepEqual(selections, [])
+      for (const error of ['not-allowed', 'no-speech', 'network', 'service-not-allowed', 'audio-capture']) {
+        await start()
+        await act(async () => instances.at(-1).onerror({ error }))
+        assert.ok(document.getElementById('voice-search-status').textContent)
+      }
+      await start()
+      await act(async () => instances.at(-1).onresult(result('   ')))
+      await start()
+      await cancel()
+      assert.ok(instances.at(-1).aborted)
+      await start()
+      const old = instances.at(-1).onresult
+      await act(async () => {
+        const input = document.getElementById('search-input')
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, 'manual')
+        input.dispatchEvent(new window.Event('input', { bubbles: true }))
+      })
+      await act(async () => old(result('late')))
+      assert.equal(writes.at(-1), 'manual')
+      for (const event of ['pagehide', 'popstate', 'hashchange']) {
+        await start()
+        await act(async () => window.dispatchEvent(new window.Event(event)))
+        assert.ok(instances.at(-1).aborted)
+      }
+      await start()
+      await render(Header, { ...props, activeView: 'songbook' })
+      assert.ok(instances.at(-1).aborted)
+      await start()
+      Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+      await act(async () => document.dispatchEvent(new window.Event('visibilitychange')))
+      assert.ok(instances.at(-1).aborted)
+      const originalStart = Mock.prototype.start
+      Mock.prototype.start = () => { throw new Error('blocked') }
+      await start()
+      assert.match(document.getElementById('voice-search-status').textContent, /could not start/)
+      Mock.prototype.start = originalStart
+      const originalTimeout = global.setTimeout
+      let watchdog
+      global.setTimeout = (fn, ms, ...args) => ms === 15000 ? (watchdog = fn, originalTimeout(() => {}, 1)) : originalTimeout(fn, ms, ...args)
+      try { await start() } finally { global.setTimeout = originalTimeout }
+      await act(async () => watchdog())
+      assert.match(document.getElementById('voice-search-status').textContent, /timed out/)
+      const { metronome } = require('../src/utils/metronome.ts')
+      const getState = metronome.getState
+      const beforeConflict = instances.length
+      metronome.getState = () => ({ ...getState.call(metronome), isRunning: true })
+      try {
+        await start()
+        assert.equal(instances.length, beforeConflict, 'active audio blocks recognition')
+        assert.match(document.getElementById('voice-search-status').textContent, /Stop the tuner/)
+      } finally { metronome.getState = getState }
+      const button = document.querySelector('[aria-label="Search by voice"]')
+      const count = instances.length
+      await act(async () => { button.click(); button.click() })
+      assert.equal(instances.length, count + 1, 'rapid taps cancel rather than overlap')
+      assert.ok(instances.at(-1).aborted)
+      assert.equal(writes.length, 2)
+    })
+  }
+})
+
+test('VOICE_SEARCH_COMPACT: dismissal and unmount invalidate callbacks', async () => {
+  await ui(360, async ({ render, click, root }) => {
+    const instances = [], writes = []
+    window.SpeechRecognition = class {
+      constructor() { instances.push(this) }
+      start() {}
+      abort() { this.aborted = true }
+    }
+    const { Header } = load('../src/components/Header.tsx')
+    await render(Header, headerProps({ onSearchQueryChange: q => writes.push(q) }))
+    await click(document.querySelector('[aria-label="Open search"]'))
+    await click(document.querySelector('[aria-label="Search by voice"]'))
+    const stale = instances[0].onresult
+    await click(document.querySelector('[aria-label="Cancel search"]'))
+    assert.ok(instances[0].aborted)
+    await act(async () => stale({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'late' } }] }))
+    assert.deepEqual(writes, [], 'voice dismissal preserves query; stale voice adds nothing')
+    await click(document.querySelector('[aria-label="Open search"]'))
+    await click(document.querySelector('[aria-label="Search by voice"]'))
+    await act(async () => root.render(null))
+    assert.ok(instances[1].aborted)
+  })
+})

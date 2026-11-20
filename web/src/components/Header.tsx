@@ -4,9 +4,11 @@ import type { SetlistFolder } from '../types/gtar'
 import { recoveryDotClass, useRecoveryAttention } from '../utils/recoveryAttention'
 import { OPEN_BACKUP_CENTER_EVENT } from '../utils/backupCenter'
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { useVoiceSearch } from './useVoiceSearch'
 import { SearchResults } from './SearchResults'
 import {
   Search,
+  Mic,
   X,
   Palette,
   Wrench,
@@ -159,6 +161,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   activeView,
+  song,
   onViewChange,
   allSongs = [],
   deletedSongsCount = 0,
@@ -286,6 +289,17 @@ export const Header: React.FC<HeaderProps> = ({
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  const voice = useVoiceSearch((query) => { onSearchQueryChange(query); setIsSearchFocused(true) },
+    `${activeView}:${song?.id}:${compact}:${mobileSearchOpen}`)
+  const cancelVoiceSearch = voice.cancel
+  const voiceListening = voice.listening
+  const voiceControl = voice.supported && (
+    <button type="button" aria-label={voice.listening ? 'Cancel voice search' : 'Search by voice'}
+      aria-pressed={voice.listening} aria-describedby="voice-search-status" onClick={voice.toggle}
+      className="min-h-11 min-w-11 flex items-center justify-center text-app-action shrink-0">
+      <Mic className="w-4 h-4" aria-hidden="true" />
+    </button>
+  )
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchTriggerRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -304,7 +318,8 @@ export const Header: React.FC<HeaderProps> = ({
         if (compact) setMobileSearchOpen(true)
         searchInputRef.current?.focus({ preventScroll: true })
       } else if (event.key === 'Escape') {
-        onSearchQueryChange('')
+        cancelVoiceSearch()
+        if (!voiceListening) onSearchQueryChange('')
         setIsSearchFocused(false)
         setMobileSearchOpen(false)
         searchInputRef.current?.blur()
@@ -313,7 +328,7 @@ export const Header: React.FC<HeaderProps> = ({
     }
     window.addEventListener('keydown', keydown)
     return () => window.removeEventListener('keydown', keydown)
-  }, [shortcutsBlocked, compact, onSearchQueryChange, showBackupRestoreModal, showDebugLogsModal, showAboutModal, advancedToolsDialog])
+  }, [shortcutsBlocked, compact, cancelVoiceSearch, voiceListening, onSearchQueryChange, showBackupRestoreModal, showDebugLogsModal, showAboutModal, advancedToolsDialog])
   const onlineSourcesEnabled = useOnlineSourcesEnabled()
   const onlineSourceSettings = useOnlineSourceSettings()
   const [onlineResults, setOnlineResults] = useState<OnlineChordResult[]>([])
@@ -582,11 +597,13 @@ export const Header: React.FC<HeaderProps> = ({
   }, [])
 
   const dismissResults = () => {
+    cancelVoiceSearch()
     setIsSearchFocused(false)
     setMobileSearchOpen(false)
   }
   const closeMobileSearch = () => {
-    onSearchQueryChange('')
+    cancelVoiceSearch()
+    if (!voiceListening) onSearchQueryChange('')
     dismissResults()
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(() => searchTriggerRef.current?.focus({ preventScroll: true }))
@@ -654,7 +671,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="md:hidden relative flex w-9 h-9 items-center justify-center rounded-xl header-neutral-icon text-app-text hover:text-app-heading hover:bg-app-base transition-colors shrink-0 before:absolute before:-inset-1 before:content-['']">
             {isExplorerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-          <button type="button" onClick={onNavigateHome} aria-label="GTAR home"
+          <button type="button" onClick={() => { cancelVoiceSearch(); onNavigateHome?.() }} aria-label="GTAR home"
             className="flex sm:flex-row flex-col items-center sm:gap-2 gap-0 text-center sm:text-left group min-h-9 cursor-pointer shrink-0">
             <div className="w-10 h-10 rounded-xl border border-app-border bg-app-base overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-all">
               <img src={mascotSrc} alt="GTAR Logo"
@@ -694,12 +711,13 @@ export const Header: React.FC<HeaderProps> = ({
                 aria-label="Search songs, artists and setlists" aria-controls="global-search-results"
                 value={searchQuery}
                 onFocus={() => setIsSearchFocused(true)}
-                onChange={(e) => { onSearchQueryChange(e.target.value); setIsSearchFocused(true) }}
+                onChange={(e) => { cancelVoiceSearch(); onSearchQueryChange(e.target.value); setIsSearchFocused(true) }}
                 placeholder="Search songs & setlists... (Esc to clear)"
                 className="header-search-input min-h-[36px] min-w-0 w-full py-1.5 pr-2 border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted focus:outline-none focus:ring-0 shadow-none" />
-              {searchQuery && (
+              {voiceControl}
+            {searchQuery && (
                 <button type="button" aria-label="Clear search"
-                  onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus({ preventScroll: true }) }}
+                  onClick={() => { cancelVoiceSearch(); onSearchQueryChange(''); searchInputRef.current?.focus({ preventScroll: true }) }}
                   className="min-h-9 min-w-9 mr-0.5 flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading transition-colors shrink-0">
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -855,7 +873,7 @@ export const Header: React.FC<HeaderProps> = ({
                   type="button"
                   data-testid="profile-trash-button"
                   aria-label={`Trash${deletedSongsCount > 0 ? ` (${deletedSongsCount})` : ''}`}
-                  onClick={() => { setShowSettingsMenu(false); onViewChange('trash') }}
+                  onClick={() => { cancelVoiceSearch(); setShowSettingsMenu(false); onViewChange('trash') }}
                   className={`md:hidden ${popoverItem} justify-between`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -900,6 +918,8 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       ) : null}
 
+      <div id="voice-search-status" role="status" aria-live="polite"
+        className="absolute top-full left-0 right-0 z-50 text-xs text-app-text bg-app-header">{voice.message}</div>
       {/* Compact full-width search overlay (GTAR1): the field takes over the header with Cancel */}
       {compact && mobileSearchOpen && (
         <div ref={(node) => { searchContainerRef.current = node }} role="search" aria-label="Mobile expanded song search"
@@ -910,12 +930,13 @@ export const Header: React.FC<HeaderProps> = ({
               aria-label="Search songs, artists and setlists" aria-controls="global-search-results"
               value={searchQuery}
               onFocus={() => setIsSearchFocused(true)}
-              onChange={(e) => { onSearchQueryChange(e.target.value); setIsSearchFocused(true) }}
+              onChange={(e) => { cancelVoiceSearch(); onSearchQueryChange(e.target.value); setIsSearchFocused(true) }}
               placeholder="Search songs & setlists..."
               className="header-search-input min-h-11 w-full border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted font-medium focus:outline-none focus:ring-0 shadow-none" />
+            {voiceControl}
             {searchQuery && (
               <button type="button" aria-label="Clear search"
-                onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus({ preventScroll: true }) }}
+                onClick={() => { cancelVoiceSearch(); onSearchQueryChange(''); searchInputRef.current?.focus({ preventScroll: true }) }}
                 className="min-h-9 min-w-9 flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading transition-colors shrink-0">
                 <X className="w-3.5 h-3.5" />
               </button>
