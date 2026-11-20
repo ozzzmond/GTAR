@@ -23,10 +23,10 @@ const audioBusy = () => ['starting', 'listening'].includes(tunerMic.getSnapshot(
 export function useVoiceSearch(onQuery: (query: string) => void, context: string) {
   const Constructor = typeof window === 'undefined' ? undefined
     : (window as SpeechWindow).SpeechRecognition || (window as SpeechWindow).webkitSpeechRecognition
-  const session = useRef<{ recognition: Recognition; token: object; timer: ReturnType<typeof setTimeout> } | null>(null)
+  const session = useRef<{ recognition: Recognition; accepted: boolean; timer: ReturnType<typeof setTimeout> } | null>(null)
   const [message, setMessage] = useState('')
-  const [listening, setListening] = useState(false)
-  const finish = useCallback((message = 'Voice search cancelled.') => {
+  const [phase, setPhase] = useState<'idle' | 'listening' | 'finishing'>('idle')
+  const finish = useCallback((message = 'Voice search cancelled.', abort = true) => {
     const current = session.current
     if (!current) return
     session.current = null
@@ -34,8 +34,10 @@ export function useVoiceSearch(onQuery: (query: string) => void, context: string
     current.recognition.onresult = null
     current.recognition.onerror = null
     current.recognition.onend = null
-    try { current.recognition.abort() } catch { /* Already ended. */ }
-    setListening(false)
+    if (abort) {
+      try { current.recognition.abort() } catch { /* Already ended. */ }
+    }
+    setPhase('idle')
     setMessage(message)
   }, [])
 
@@ -59,24 +61,36 @@ export function useVoiceSearch(onQuery: (query: string) => void, context: string
   }, [finish, context])
 
   const toggle = () => {
-    if (session.current) { finish(); return }
+    if (session.current) {
+      if (!session.current.accepted) finish()
+      return
+    }
     if (!Constructor) return
     if (audioBusy()) { setMessage('Stop the tuner, reference tone or metronome before voice search.'); return }
     try {
       const recognition = new Constructor()
-      const token = {}
       recognition.continuous = false
       recognition.interimResults = false
-      session.current = { recognition, token, timer: setTimeout(() => { if (session.current?.token === token) finish('Voice search timed out. Try again.') }, 15000) }
-      const current = () => session.current?.token === token
+      const current = () => session.current?.recognition === recognition
+      const timer = setTimeout(() => {
+        if (current()) finish(session.current?.accepted ? 'Voice search complete.' : 'Voice search timed out. Try again.')
+      }, 15000)
+      const attempt = { recognition, timer, accepted: false }
+      session.current = attempt
       recognition.onresult = event => {
-        if (!current()) return
+        if (!current() || attempt.accepted) return
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i]
           if (!result.isFinal) continue
           const query = (result[0]?.transcript || '').trim().slice(0, 200)
-          finish(query ? 'Voice search complete.' : 'No speech heard. Try again.')
-          if (query) onQuery(query)
+          if (!query) {
+            finish('No speech heard. Try again.')
+            return
+          }
+          attempt.accepted = true
+          setPhase('finishing')
+          setMessage('Finishing voice search…')
+          onQuery(query)
           return
         }
       }
@@ -90,14 +104,14 @@ export function useVoiceSearch(onQuery: (query: string) => void, context: string
         }
         finish(errors[event.error] || 'Voice search failed. Try again.')
       }
-      recognition.onend = () => { if (current()) finish('No speech heard. Try again.') }
+      recognition.onend = () => { if (current()) finish(attempt.accepted ? 'Voice search complete.' : 'No speech heard. Try again.', false) }
       setMessage('Listening… Tap microphone to cancel.')
-      setListening(true)
+      setPhase('listening')
       recognition.start()
     } catch {
       finish('Voice search could not start. Try again.')
       setMessage('Voice search could not start. Try again.')
     }
   }
-  return { supported: !!Constructor, listening, message, toggle, cancel: finish }
+  return { supported: !!Constructor, listening: phase !== 'idle', finishing: phase === 'finishing', message, toggle, cancel: finish }
 }

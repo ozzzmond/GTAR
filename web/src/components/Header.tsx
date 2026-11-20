@@ -294,7 +294,8 @@ export const Header: React.FC<HeaderProps> = ({
   const cancelVoiceSearch = voice.cancel
   const voiceListening = voice.listening
   const voiceControl = voice.supported && (
-    <button type="button" aria-label={voice.listening ? 'Cancel voice search' : 'Search by voice'}
+    <button type="button" disabled={voice.finishing}
+      aria-label={voice.finishing ? 'Finishing voice search' : voice.listening ? 'Cancel voice search' : 'Search by voice'}
       aria-pressed={voice.listening} aria-describedby="voice-search-status" onClick={voice.toggle}
       className="min-h-11 min-w-11 flex items-center justify-center text-app-action shrink-0">
       <Mic className="w-4 h-4" aria-hidden="true" />

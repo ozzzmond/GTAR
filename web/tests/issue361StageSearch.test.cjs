@@ -215,6 +215,19 @@ test('VOICE_SEARCH: unsupported fallback, both constructors, one final write and
       await act(async () => stale(result('duplicate')))
       assert.deepEqual(writes, ['a'.repeat(200)])
       assert.deepEqual(selections, [])
+      const mic = document.querySelector('[aria-label="Finishing voice search"]')
+      assert.ok(mic.disabled)
+      await act(async () => { mic.click(); mic.click() })
+      assert.equal(instances.length, 1)
+      assert.ok(!first.aborted)
+      const endFirst = first.onend
+      await act(async () => endFirst())
+      assert.ok(!first.aborted, 'native completion never aborts the recognizer')
+      await start()
+      const second = instances.at(-1)
+      assert.notEqual(second, first)
+      await act(async () => { endFirst(); stale(result('old')); second.onresult(result('second')); second.onend() })
+      assert.deepEqual(writes, ['a'.repeat(200), 'second'])
       for (const error of ['not-allowed', 'no-speech', 'network', 'service-not-allowed', 'audio-capture']) {
         await start()
         await act(async () => instances.at(-1).onerror({ error }))
@@ -275,7 +288,17 @@ test('VOICE_SEARCH: unsupported fallback, both constructors, one final write and
       await act(async () => { button.click(); button.click() })
       assert.equal(instances.length, count + 1, 'rapid taps cancel rather than overlap')
       assert.ok(instances.at(-1).aborted)
-      assert.equal(writes.length, 2)
+      try {
+        global.setTimeout = (fn, ms, ...args) => ms === 15000 ? (watchdog = fn, originalTimeout(() => {}, 1)) : originalTimeout(fn, ms, ...args)
+        await start()
+      } finally { global.setTimeout = originalTimeout }
+      const hung = instances.at(-1)
+      await act(async () => hung.onresult(result('last')))
+      assert.ok(!hung.aborted)
+      await act(async () => watchdog())
+      assert.ok(hung.aborted)
+      assert.ok(document.querySelector('[aria-label="Search by voice"]'))
+      assert.deepEqual(writes, ['a'.repeat(200), 'second', 'manual', 'last'])
     })
   }
 })
