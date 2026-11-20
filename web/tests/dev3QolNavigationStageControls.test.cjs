@@ -53,7 +53,7 @@ test('DEV3_HEADER_TOOLBAR_ORDER: Header cloud button retired, Settings gear pres
   assert.equal(stageSource.indexOf('aria-label="Stage Tools"'), -1, 'Stage Tools button retired')
 
   // Home navigation preserved via the logo entry (#224: hover tooltip removed)
-  assert.ok(headerSource.includes('onClick={onNavigateHome}'), 'Logo home entry preserved')
+  assert.ok(headerSource.includes('onClick={() => { cancelVoiceSearch(); onNavigateHome?.() }}'), 'Logo home entry preserved')
   assert.ok(!headerSource.includes('title="Return to Songbook Library Home (Alt+0)"'), '#224: no hover tooltip')
 })
 

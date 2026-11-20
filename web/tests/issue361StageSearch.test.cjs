@@ -189,9 +189,9 @@ test('VOICE_SEARCH: unsupported fallback, both constructors, one final write and
   for (const constructorName of ['SpeechRecognition', 'webkitSpeechRecognition']) {
     await ui(1280, async ({ render, click }) => {
       const { Header } = load('../src/components/Header.tsx')
-      const writes = [], selections = [], instances = []
+      const writes = [], selections = [], instances = [], homes = []
       const props = headerProps({ searchQuery: 'keep', onSearchQueryChange: q => writes.push(q),
-        onSelectSearchSong: i => selections.push(i) })
+        onSelectSearchSong: i => selections.push(i), onNavigateHome: () => homes.push(true) })
       await render(Header, props)
       assert.equal(document.querySelector('[aria-label="Search by voice"]'), null)
       class Mock {
@@ -225,6 +225,10 @@ test('VOICE_SEARCH: unsupported fallback, both constructors, one final write and
       await start()
       await cancel()
       assert.ok(instances.at(-1).aborted)
+      await start()
+      await click(document.querySelector('[aria-label="GTAR home"]'))
+      assert.ok(instances.at(-1).aborted)
+      assert.equal(homes.length, 1)
       await start()
       const old = instances.at(-1).onresult
       await act(async () => {
