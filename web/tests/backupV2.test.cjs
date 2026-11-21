@@ -204,6 +204,20 @@ test('fields this version does not know are reported, not silently dropped', asy
   assert.deepEqual(parsed.ignoredFields, ['futureThing', 'setlists[].color', 'setlists[].songs[].note', 'songs[].mood'])
 })
 
+test('legacy setlists[].songIds is reported as a skipped legacy field, not as unknown data, and no setlist song is lost', () => {
+  global.localStorage = new MemoryStorage()
+  const payload = jb.createBackupPayload([{ id: 'a', title: 'A', rawContent: 'x' }], [{ id: 's1', name: 'Set', createdAt: 1, songs: [{ id: 'a', title: 'A' }] }])
+  delete payload.contentFingerprint // hand-made fixture, as in the unknown-fields test above
+  payload.setlists[0].songIds = ['stale-id-1']
+  payload.futureThing = 1
+  const parsed = jb.parseBackupJson(JSON.stringify(payload))
+  assert.equal(parsed.isValid, true, parsed.error)
+  assert.deepEqual(parsed.legacyFields, ['setlists[].songIds'])
+  assert.deepEqual(parsed.ignoredFields, ['futureThing'])
+  assert.equal(parsed.setlists.length, 1)
+  assert.equal(parsed.setlists[0].songs.length, 1)
+})
+
 test('verification refuses bytes that do not restore to the same library', async () => {
   global.localStorage = new MemoryStorage()
   const payload = jb.createBackupPayload([{ id: 'a', title: 'A', rawContent: 'x' }, { id: 'b', title: 'B', rawContent: 'y', isDeleted: true }], [])

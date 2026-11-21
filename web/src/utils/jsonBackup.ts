@@ -52,6 +52,8 @@ export interface ParsedBackupResult extends BackupSettings {
   settings: BackupSettingsV2
   /** Fields present in the file that this version does not restore (shown to the user, never silently dropped). */
   ignoredFields: string[]
+  /** Old-format fields a restore skips on purpose because the data is kept elsewhere in the file (for example setlists[].songIds). Not data loss. */
+  legacyFields: string[]
   isValid: boolean
   isSingleSetlist: boolean
   singleSetlistName?: string
@@ -302,6 +304,8 @@ const KNOWN_SONG_FIELDS = new Set(['id', 'title', 'artist', 'key', 'originalKey'
   'sharedSourceSongId', 'sharedSourceRevision', 'sharedSourcePublisherId', 'sharedSourcePublisherName', 'publishedCatalogSongId'])
 const KNOWN_SETLIST_FIELDS = new Set(['id', 'name', 'createdAt', 'isDeleted', 'songs', 'catalogSource', 'folderId'])
 const KNOWN_REF_FIELDS = new Set(['id', 'entryId', 'position', 'title', 'artist'])
+/** Old exports carried setlists[].songIds beside setlists[].songs; the ids are stale and every song stays in `songs`. */
+const LEGACY_SKIPPED_FIELDS = new Set(['setlists[].songIds'])
 
 function legacySettingsOf(settings: BackupSettingsV2): BackupSettings {
   const out: BackupSettings = {}
@@ -353,7 +357,7 @@ function keepDeviceValues(songs: ActiveSongState[], sources: Partial<ActiveSongS
 
 export function parseBackupJson(rawText: string, options: BackupParseOptions = {}): ParsedBackupResult {
   const invalid = (errors: string[], single = false): ParsedBackupResult => ({ isValid: false, isSingleSetlist: single,
-    songs: [], setlists: [], settings: { appearance: {}, preferences: {} }, ignoredFields: [], error: `Backup rejected:\n${errors.map(error => `- ${error}`).join('\n')}` })
+    songs: [], setlists: [], settings: { appearance: {}, preferences: {} }, ignoredFields: [], legacyFields: [], error: `Backup rejected:\n${errors.map(error => `- ${error}`).join('\n')}` })
   try {
     const data = JSON.parse(rawText)
     if (!data || typeof data !== 'object') return invalid(['Expected a backup object or song array'])
@@ -497,8 +501,10 @@ export function parseBackupJson(rawText: string, options: BackupParseOptions = {
       deletedSetlistCount: setlists.filter(setlist => setlist.isDeleted).length,
       trashCount: partition.deleted.length,
     }
+    const unknownFields = unknownBackupFields(data, single)
     return { isValid: true, isSingleSetlist: single, ...(single ? { singleSetlistName: data.setlist.name } : {}),
-      ...legacySettingsOf(settingsV2), settings: settingsV2, ignoredFields: unknownBackupFields(data, single),
+      ...legacySettingsOf(settingsV2), settings: settingsV2, ignoredFields: unknownFields.filter(field => !LEGACY_SKIPPED_FIELDS.has(field)),
+      legacyFields: unknownFields.filter(field => LEGACY_SKIPPED_FIELDS.has(field)),
       songs: options.mode === 'merge' ? keepDeviceValues(songs, sourceSongs, options.existingSongs ?? []) : songs,
       setlists: bindLegacySetlists(boundIncoming, combined),
       ...(tagColors !== undefined ? { tagColors } : {}),

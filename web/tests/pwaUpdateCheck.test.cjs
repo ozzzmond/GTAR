@@ -25,7 +25,7 @@ function worker(state) {
 }
 
 function harness({ reply = release(RUNNING), update = async () => {}, incoming = null, stage = false, runningVersion = RUNNING, registration, online = true } = {}) {
-  const calls = { fetch: [], update: 0, reload: 0 }
+  const calls = { fetch: [], update: 0, reload: 0, warn: [] }
   const reg = registration !== undefined ? registration : {
     installing: null,
     waiting: null,
@@ -37,6 +37,7 @@ function harness({ reply = release(RUNNING), update = async () => {}, incoming =
     now: () => 1234567,
     activationTimeoutMs: 20,
     stageActive: () => stage,
+    warn: (message, error) => { calls.warn.push({ message, name: error?.name }) },
     reload: () => { calls.reload++ },
     serviceWorker: { getRegistration: async () => reg ?? undefined },
     fetchImpl: async (url, init) => {
@@ -81,10 +82,26 @@ test('update check: a redirect or non-JSON reply is blocked, never up to date', 
   }
 })
 
-test('update check: a refused worker script is blocked even when release.json matches', async () => {
+test('update check: a refused worker script is its own result, with the error name, and is logged', async () => {
   const { calls, deps } = harness({ update: async () => { throw new TypeError('script redirect') } })
-  assert.equal((await checkForUpdates(deps)).status, 'blocked')
+  const result = await checkForUpdates(deps)
+  assert.deepEqual(result, { status: 'worker-failed', latestVersion: RUNNING, detail: 'TypeError' })
+  assert.equal(describeUpdateCheck(result), 'Update worker could not run (TypeError). Close and reopen GTAR, then try again.')
+  assert.deepEqual(calls.warn, [{ message: 'GTAR update check: service worker update failed', name: 'TypeError' }])
   assert.equal(calls.reload, 0)
+})
+
+test('update check: newer release.json with a failing worker says the update is stuck, never blocked or up to date', async () => {
+  const { calls, deps } = harness({ reply: release('1.2.6'), update: async () => { throw new TypeError('script redirect') } })
+  const result = await checkForUpdates(deps)
+  assert.deepEqual(result, { status: 'update-stuck', latestVersion: '1.2.6', detail: 'TypeError' })
+  assert.match(describeUpdateCheck(result), /^Update v1\.2\.6 found but could not be installed \(TypeError\)\. Close and reopen GTAR\./)
+  assert.equal(calls.reload, 0)
+})
+
+test('update check: a blocked release.json is still blocked when the worker also fails', async () => {
+  const { deps } = harness({ reply: { type: 'opaqueredirect', redirected: false, ok: false, status: 0, text: async () => '' }, update: async () => { throw new TypeError('x') } })
+  assert.equal((await checkForUpdates(deps)).status, 'blocked')
 })
 
 test('update check: offline and unreachable server never report up to date', async () => {
@@ -133,7 +150,7 @@ test('update check: a worker still downloading or failing to install does not re
   assert.equal(slow.calls.reload, 0)
 
   const broken = harness({ reply: release('1.2.4'), incoming: worker('redundant') })
-  assert.equal((await checkForUpdates(broken.deps)).status, 'blocked')
+  assert.equal((await checkForUpdates(broken.deps)).status, 'update-stuck')
   assert.equal(broken.calls.reload, 0)
 })
 
@@ -147,14 +164,14 @@ test('update check: builds without release.json (DEV, preview) rely on the worke
   assert.equal(updated.calls.reload, 1)
 
   const refused = harness({ runningVersion: '0.0.0-unversioned', update: async () => { throw new TypeError('redirect') } })
-  assert.deepEqual(await checkForUpdates(refused.deps), { status: 'failed' })
+  assert.deepEqual(await checkForUpdates(refused.deps), { status: 'worker-failed', detail: 'TypeError' })
 
   const noWorker = harness({ runningVersion: '0.0.0-unversioned', registration: null })
   assert.deepEqual(await checkForUpdates(noWorker.deps), { status: 'unavailable' })
 })
 
 test('update check: status copy is short and plain', () => {
-  const copy = Object.fromEntries(['up-to-date', 'no-new-build', 'reloading', 'next-launch', 'blocked', 'offline', 'failed', 'unavailable']
+  const copy = Object.fromEntries(['up-to-date', 'no-new-build', 'reloading', 'next-launch', 'blocked', 'worker-failed', 'update-stuck', 'offline', 'failed', 'unavailable']
     .map(status => [status, describeUpdateCheck({ status })]))
   assert.deepEqual(copy, {
     'up-to-date': 'Up to date.',
@@ -162,6 +179,8 @@ test('update check: status copy is short and plain', () => {
     reloading: 'Updating…',
     'next-launch': 'Update applies on next launch.',
     blocked: 'Update check blocked. Sign-in needed.',
+    'worker-failed': 'Update worker could not run. Close and reopen GTAR, then try again.',
+    'update-stuck': 'Update found but could not be installed. Close and reopen GTAR. If it repeats, back up, remove GTAR from the Home Screen and add it again.',
     offline: 'Offline. Try again when connected.',
     failed: 'Update check failed. Try again.',
     unavailable: 'Update check is not available here.',

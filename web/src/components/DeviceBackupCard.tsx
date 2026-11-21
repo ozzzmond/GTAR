@@ -362,10 +362,11 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
         return
       }
       if (parsed.ignoredFields.length) settingsNote += ` Not restored (unknown to this version): ${parsed.ignoredFields.slice(0, 8).join(', ')}${parsed.ignoredFields.length > 8 ? ', …' : ''}.`
+      if (parsed.legacyFields.length) settingsNote += ` Old-format fields skipped, no songs lost: ${parsed.legacyFields.join(', ')}.`
 
       // Keep recovery snapshots after success too; they may contain unique data.
       setPendingRestore(null)
-      showFeedback(parsed.ignoredFields.length || keptSetlists.length ? 'info' : 'success', `Backup ${keptSetlists.length ? 'merged' : 'restored'}: ${parsed.songs.length} songs, ${setlistCount} setlists (verified after saving).${keptNote}${settingsNote}`)
+      showFeedback(parsed.ignoredFields.length || parsed.legacyFields.length || keptSetlists.length ? 'info' : 'success', `Backup ${keptSetlists.length ? 'merged' : 'restored'}: ${parsed.songs.length} songs, ${setlistCount} setlists (verified after saving).${keptNote}${settingsNote}`)
     } finally {
       setIsRestoring(false)
     }
@@ -506,10 +507,19 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
           provenance={{ appVersion: parsedPending.metadata?.version, schemaVersion: parsedPending.metadata?.schemaVersion, createdAt: parsedPending.metadata?.exportedAt }}
           canReplace={!parsedPending.isSingleSetlist}
           settings={{ appearance: fieldCount(parsedPending.settings.appearance), preferences: fieldCount(parsedPending.settings.preferences), choice: restoreChoice, onChoice: setRestoreChoice }}
-          note={parsedPending.ignoredFields.length > 0 && (
-            <p className="text-[11px] text-app-muted leading-snug">
-              Not restored (unknown to this version): {parsedPending.ignoredFields.slice(0, 8).join(', ')}{parsedPending.ignoredFields.length > 8 ? ', …' : ''}
-            </p>
+          note={(parsedPending.ignoredFields.length > 0 || parsedPending.legacyFields.length > 0) && (
+            <>
+              {parsedPending.ignoredFields.length > 0 && (
+                <p className="text-[11px] text-app-muted leading-snug">
+                  Not restored (unknown to this version): {parsedPending.ignoredFields.slice(0, 8).join(', ')}{parsedPending.ignoredFields.length > 8 ? ', …' : ''}
+                </p>
+              )}
+              {parsedPending.legacyFields.length > 0 && (
+                <p className="text-[11px] text-app-muted leading-snug">
+                  Old-format fields skipped, no songs lost: {parsedPending.legacyFields.join(', ')}
+                </p>
+              )}
+            </>
           )}
           busy={isRestoring}
           blocked={restoreBlocked}
