@@ -37,6 +37,7 @@ test('import modal wires the QR scanner through the existing share-link pipeline
   assert.match(src, /<QrScanner\b/)
   assert.match(src, /extractShareToken\(text\)/)
   assert.match(src, /handleResolvePastedShareLink\(text\)/)
+  assert.match(src, /throw new Error\(extracted\.error\)/)
   assert.match(src, /Paste GTAR Share Link/)
   assert.match(src, /Legacy JSON file import/)
 })
@@ -65,7 +66,7 @@ test('Scan QR Code: valid, invalid, permission-denied, cancel and unmount paths'
     const accepted = []
     const onText = text => {
       const extracted = extractShareToken(text)
-      if (!extracted.isValid) throw new Error('This QR is not a GTAR setlist share code.')
+      if (!extracted.isValid) throw new Error(extracted.error)
       accepted.push(extracted.token)
       return 'QR scanned.'
     }
@@ -96,10 +97,10 @@ test('Scan QR Code: valid, invalid, permission-denied, cancel and unmount paths'
 
     data = pixels('https://evil.test/?share=' + token)
     await click('Scan QR Code')
-    assert.deepEqual(accepted, [token]); assert.match(document.body.textContent, /not a GTAR setlist share code/); assert.equal(stopped, 3)
+    assert.deepEqual(accepted, [token]); assert.match(document.body.textContent, /only GTAR share links from this application origin/); assert.equal(stopped, 3)
     data = pixels('hello world')
     await click('Scan QR Code')
-    assert.deepEqual(accepted, [token]); assert.match(document.body.textContent, /not a GTAR setlist share code/)
+    assert.deepEqual(accepted, [token]); assert.match(document.body.textContent, /Invalid share link format/)
 
     data = pixels(shareUrl)
     const file = document.querySelector('input[type=file]')

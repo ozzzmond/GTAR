@@ -827,7 +827,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   onText={(text) => {
                     const extracted = extractShareToken(text)
                     if (!extracted.isValid) {
-                      throw new Error('This QR is not a GTAR setlist share code. Scan a QR exported from GTAR Share Setlist.')
+                      throw new Error(extracted.error)
                     }
                     setPastedShareLink(text)
                     void handleResolvePastedShareLink(text)
