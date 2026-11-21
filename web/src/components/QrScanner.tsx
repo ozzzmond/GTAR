@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { readTvQr } from '../utils/stageCast2Qr'
-import { SETLIST_QR_COPY, type QrScannerCopy } from './qrScannerCopy'
+import { SETLIST_QR_CLASSES, SETLIST_QR_COPY, type QrScannerClasses, type QrScannerCopy } from './qrScannerCopy'
 
 void React
 
@@ -8,15 +8,10 @@ export interface QrScannerProps {
   /** Receives decoded QR text. Throw an Error to reject it (message is shown); return a string to show as status on success. */
   onText: (text: string) => string | void
   copy?: QrScannerCopy
-  containerClassName?: string
-  photoClassName?: string
-  inputClassName?: string
+  classes?: QrScannerClasses
 }
 
-const DEFAULT_CONTAINER = 'flex flex-wrap items-center gap-2'
-const DEFAULT_PHOTO = 'px-3 py-2 rounded-lg border border-app-border text-xs font-mono cursor-pointer'
-
-export function QrScanner({ onText, copy = SETLIST_QR_COPY, containerClassName = DEFAULT_CONTAINER, photoClassName = DEFAULT_PHOTO, inputClassName = 'sr-only' }: QrScannerProps) {
+export function QrScanner({ onText, copy = SETLIST_QR_COPY, classes = SETLIST_QR_CLASSES }: QrScannerProps) {
   const video = useRef<HTMLVideoElement>(null)
   const stream = useRef<MediaStream | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -103,17 +98,18 @@ export function QrScanner({ onText, copy = SETLIST_QR_COPY, containerClassName =
     }
     img.src = url
   }
-  return <div className={containerClassName}>
-    <button type="button" onClick={() => void camera()}>{copy.scan}</button>
-    <label className={photoClassName}>{copy.photo}
-      <input type="file" accept="image/*" className={inputClassName || undefined} onChange={event => {
+  const cls = (value: string) => value || undefined
+  return <div className={cls(classes.container)}>
+    <button type="button" className={cls(classes.scan)} onClick={() => void camera()}>{copy.scan}</button>
+    <label className={cls(classes.photo)}>{copy.photo}
+      <input type="file" accept="image/*" className={cls(classes.input)} onChange={event => {
         photo(event.target.files?.[0]); event.target.value = ''
       }} />
     </label>
-    {active && <div>
-      <video ref={video} autoPlay muted playsInline aria-label={copy.cameraLabel} />
-      <button type="button" onClick={() => { stop(); setActive(false); setMessage(copy.cancelled) }}>{copy.cancel}</button>
+    {active && <div className={cls(classes.videoWrap)}>
+      <video className={cls(classes.video)} ref={video} autoPlay muted playsInline aria-label={copy.cameraLabel} />
+      <button type="button" className={cls(classes.cancel)} onClick={() => { stop(); setActive(false); setMessage(copy.cancelled) }}>{copy.cancel}</button>
     </div>}
-    <p role="status" aria-live="polite">{message}</p>
+    <p className={cls(classes.status)} role="status" aria-live="polite">{message}</p>
   </div>
 }

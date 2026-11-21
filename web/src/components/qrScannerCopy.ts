@@ -31,3 +31,32 @@ export const SETLIST_QR_COPY: QrScannerCopy = {
   unreadableImage: 'Image could not be read. Choose another image or paste the share link.',
   photoFailed: 'Image scan failed. Paste the share link instead.',
 }
+
+export interface QrScannerClasses {
+  container: string
+  scan: string
+  photo: string
+  input: string
+  videoWrap: string
+  video: string
+  cancel: string
+  status: string
+}
+
+const SECONDARY_BTN = 'px-3 py-2 rounded-lg border border-app-border hover:border-app-action bg-app-base ui-secondary-text text-app-muted hover:text-app-heading text-xs font-mono font-bold transition-colors cursor-pointer'
+
+export const SETLIST_QR_CLASSES: QrScannerClasses = {
+  container: 'flex flex-wrap items-center gap-2',
+  scan: 'px-3 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 font-mono text-xs font-bold transition-colors cursor-pointer',
+  photo: SECONDARY_BTN,
+  input: 'sr-only',
+  videoWrap: 'w-full space-y-2',
+  video: 'w-full max-h-[40dvh] rounded-lg bg-app-base',
+  cancel: SECONDARY_BTN,
+  status: 'w-full text-[11px] font-mono font-medium ui-muted-text text-app-muted',
+}
+
+export const TV_QR_CLASSES: QrScannerClasses = {
+  container: 'cast2-scanner', scan: '', photo: 'cast2-photo', input: '',
+  videoWrap: '', video: '', cancel: '', status: '',
+}

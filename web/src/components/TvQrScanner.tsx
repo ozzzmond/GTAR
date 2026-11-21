@@ -1,7 +1,7 @@
 import React from 'react'
 import { parseTvQr } from '../utils/stageCast2Qr'
 import { QrScanner } from './QrScanner'
-import type { QrScannerCopy } from './qrScannerCopy'
+import { TV_QR_CLASSES, type QrScannerCopy } from './qrScannerCopy'
 
 void React
 
@@ -25,9 +25,7 @@ const TV_COPY: QrScannerCopy = {
 export function TvQrScanner({ onReference }: { onReference: (ref: string) => void }) {
   return <QrScanner
     copy={TV_COPY}
-    containerClassName="cast2-scanner"
-    photoClassName="cast2-photo"
-    inputClassName=""
+    classes={TV_QR_CLASSES}
     onText={value => {
       const ref = parseTvQr(value, window.location.origin)
       if (!ref) throw Error('This is not a TV QR from this GTAR site. Try again or enter the TV reference manually.')

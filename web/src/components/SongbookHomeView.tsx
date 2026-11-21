@@ -35,6 +35,7 @@ import {
   Tag,
   Link,
   PanelRight,
+  QrCode,
 } from 'lucide-react'
 import { WorkspacePreviewPane } from './WorkspacePreviewPane'
 import { WorkspaceSongPreview } from './WorkspaceSongPreview'
@@ -822,24 +823,33 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   {isResolvingLink ? 'Loading...' : 'Load'}
                 </button>
               </div>
-              <div data-testid="import-qr-scanner" className="pt-1">
-                <QrScanner
-                  onText={(text) => {
-                    const extracted = extractShareToken(text)
-                    if (!extracted.isValid) {
-                      throw new Error(extracted.error)
-                    }
-                    setPastedShareLink(text)
-                    void handleResolvePastedShareLink(text)
-                    return 'QR scanned. Loading shared setlist...'
-                  }}
-                />
-              </div>
               {importLinkError && (
                 <p data-testid="import-link-error" className="text-[11px] text-status-error font-mono font-medium">
                   {importLinkError}
                 </p>
               )}
+            </div>
+
+            {/* Scan GTAR Share QR */}
+            <div data-testid="import-qr-scanner" className="space-y-2 mb-5">
+              <div className="text-xs font-bold font-mono ui-primary-text text-app-heading flex items-center gap-1.5">
+                <QrCode className="w-3.5 h-3.5 text-app-action" />
+                <span>Scan GTAR Share QR</span>
+              </div>
+              <p className="text-[11px] ui-muted-text text-app-muted">
+                Use the camera, or choose a QR image saved from GTAR:
+              </p>
+              <QrScanner
+                onText={(text) => {
+                  const extracted = extractShareToken(text)
+                  if (!extracted.isValid) {
+                    throw new Error(extracted.error)
+                  }
+                  setPastedShareLink(text)
+                  void handleResolvePastedShareLink(text)
+                  return 'QR scanned. Loading shared setlist...'
+                }}
+              />
             </div>
 
             {/* Secondary Action: Legacy JSON file import */}
