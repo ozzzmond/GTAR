@@ -42,6 +42,7 @@ import { readWorkspaceEnabled, rememberWorkspaceEnabled, readWorkspaceWidth, rem
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus, formatTempoLabel, syncCanonicalDirectives } from '../utils/chordProMetadata'
 import { resolveSongKeys } from '../utils/songKeySemantics'
+import { QrScanner } from './QrScanner'
 import { extractShareToken, validateSharedSetlistPayload, type SharedSetlistPayload } from '../utils/sharedSetlist'
 import { SongStatusBadge } from './SongStatusBadge'
 import { SwipeableActionCard } from './SwipeableActionCard'
@@ -636,9 +637,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     }
   }
 
-  const handleResolvePastedShareLink = async () => {
+  const handleResolvePastedShareLink = async (input: string = pastedShareLink) => {
     setImportLinkError(null)
-    const extracted = extractShareToken(pastedShareLink)
+    const extracted = extractShareToken(input)
     if (!extracted.isValid) {
       setImportLinkError(extracted.error)
       return
@@ -815,11 +816,24 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   type="button"
                   data-testid="load-share-link-btn"
                   disabled={!pastedShareLink.trim() || isResolvingLink}
-                  onClick={handleResolvePastedShareLink}
+                  onClick={() => void handleResolvePastedShareLink()}
                   className="px-3 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 font-mono text-xs font-bold transition-colors cursor-pointer disabled:opacity-40"
                 >
                   {isResolvingLink ? 'Loading...' : 'Load'}
                 </button>
+              </div>
+              <div data-testid="import-qr-scanner" className="pt-1">
+                <QrScanner
+                  onText={(text) => {
+                    const extracted = extractShareToken(text)
+                    if (!extracted.isValid) {
+                      throw new Error('This QR is not a GTAR setlist share code. Scan a QR exported from GTAR Share Setlist.')
+                    }
+                    setPastedShareLink(text)
+                    void handleResolvePastedShareLink(text)
+                    return 'QR scanned. Loading shared setlist...'
+                  }}
+                />
               </div>
               {importLinkError && (
                 <p data-testid="import-link-error" className="text-[11px] text-status-error font-mono font-medium">
