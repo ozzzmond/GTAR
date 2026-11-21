@@ -35,6 +35,7 @@ import {
   Tag,
   Link,
   PanelRight,
+  QrCode,
 } from 'lucide-react'
 import { WorkspacePreviewPane } from './WorkspacePreviewPane'
 import { WorkspaceSongPreview } from './WorkspaceSongPreview'
@@ -42,6 +43,7 @@ import { readWorkspaceEnabled, rememberWorkspaceEnabled, readWorkspaceWidth, rem
 import { exportAllDataJson, exportSingleSetlistJson, parseBackupJson } from '../utils/jsonBackup'
 import { getSongMetadataStatus, formatTempoLabel, syncCanonicalDirectives } from '../utils/chordProMetadata'
 import { resolveSongKeys } from '../utils/songKeySemantics'
+import { QrScanner } from './QrScanner'
 import { extractShareToken, validateSharedSetlistPayload, type SharedSetlistPayload } from '../utils/sharedSetlist'
 import { SongStatusBadge } from './SongStatusBadge'
 import { SwipeableActionCard } from './SwipeableActionCard'
@@ -636,9 +638,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
     }
   }
 
-  const handleResolvePastedShareLink = async () => {
+  const handleResolvePastedShareLink = async (input: string = pastedShareLink) => {
     setImportLinkError(null)
-    const extracted = extractShareToken(pastedShareLink)
+    const extracted = extractShareToken(input)
     if (!extracted.isValid) {
       setImportLinkError(extracted.error)
       return
@@ -815,7 +817,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   type="button"
                   data-testid="load-share-link-btn"
                   disabled={!pastedShareLink.trim() || isResolvingLink}
-                  onClick={handleResolvePastedShareLink}
+                  onClick={() => void handleResolvePastedShareLink()}
                   className="px-3 py-2 rounded-lg bg-app-action text-app-on-action hover:bg-app-action/90 font-mono text-xs font-bold transition-colors cursor-pointer disabled:opacity-40"
                 >
                   {isResolvingLink ? 'Loading...' : 'Load'}
@@ -826,6 +828,28 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   {importLinkError}
                 </p>
               )}
+            </div>
+
+            {/* Scan GTAR Share QR */}
+            <div data-testid="import-qr-scanner" className="space-y-2 mb-5">
+              <div className="text-xs font-bold font-mono ui-primary-text text-app-heading flex items-center gap-1.5">
+                <QrCode className="w-3.5 h-3.5 text-app-action" />
+                <span>Scan GTAR Share QR</span>
+              </div>
+              <p className="text-[11px] ui-muted-text text-app-muted">
+                Use the camera, or choose a QR image saved from GTAR:
+              </p>
+              <QrScanner
+                onText={(text) => {
+                  const extracted = extractShareToken(text)
+                  if (!extracted.isValid) {
+                    throw new Error(extracted.error)
+                  }
+                  setPastedShareLink(text)
+                  void handleResolvePastedShareLink(text)
+                  return 'QR scanned. Loading shared setlist...'
+                }}
+              />
             </div>
 
             {/* Secondary Action: Legacy JSON file import */}

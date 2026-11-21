@@ -298,6 +298,7 @@ New or renamed tests await a human choice of primary category.
 - [retiredLegacyShareAndSync453.test.cjs](retiredLegacyShareAndSync453.test.cjs)
 - [scaleBaseline.test.cjs](scaleBaseline.test.cjs)
 - [setlistAutoFollow.test.cjs](setlistAutoFollow.test.cjs)
+- [setlistImportQrScan595.test.cjs](setlistImportQrScan595.test.cjs)
 - [setlistIntegratedOptionsRevamp579.test.cjs](setlistIntegratedOptionsRevamp579.test.cjs)
 - [setlistMembershipIndex.test.cjs](setlistMembershipIndex.test.cjs)
 - [setlistMergeConflictSkip.test.cjs](setlistMergeConflictSkip.test.cjs)
