@@ -114,7 +114,7 @@ test('issue#600: iPhone/iPad are available on DEV hosts only; every other rule i
   assert.equal(proPresenterAvailability().available, false)
 })
 
-function fixture(t, fetcher) {
+function fixture(t, fetcher, diagnostics) {
   const doc = new EventTarget(); doc.hidden = false
   property(t, globalThis, 'document', doc)
   const requests = [], streams = []
@@ -130,7 +130,7 @@ function fixture(t, fetcher) {
   let currentRead
   let panel, settings = { host: '192.168.1.2', port: 1025 }, settingsListener
   const reports = [], panels = [], snapshots = []
-  const ctx = { setCurrentSlideRead: read => { currentRead = read }, publishFollowSnapshot: value => snapshots.push(value), signal: controller.signal, settings: { read: () => settings, subscribe: fn => { settingsListener = fn; return () => { settingsListener = undefined } } }, reportStatus: (...args) => reports.push(args), log() { throw Error('No slide logging') }, setPanel: value => { panel = value; panels.push(value) } }
+  const ctx = { ...(diagnostics === undefined ? {} : { diagnostics }), setCurrentSlideRead: read => { currentRead = read }, publishFollowSnapshot: value => snapshots.push(value), signal: controller.signal, settings: { read: () => settings, subscribe: fn => { settingsListener = fn; return () => { settingsListener = undefined } } }, reportStatus: (...args) => reports.push(args), log() { throw Error('No slide logging') }, setPanel: value => { panel = value; panels.push(value) } }
   const dispose = activate(ctx)
   t.after(dispose)
   return { readCurrent: signal => currentRead(signal), requests, streams, reports, panels, snapshots, controller, dispose, get panel() { return panel }, value: label => panel.fields.find(f => f.label === label).value,
@@ -214,6 +214,18 @@ test('connection test uses one snapshot GET, cancels it, reports result and resu
   f.panel.actions[0].run(); await flush()
   f.streams[5].error(Error('unreachable')); await flush()
   assert.match(f.value('Connection test'), /Cannot reach ProPresenter.*same Wi-Fi.*network setting.*local network access/)
+})
+test('issue#600: Test connection adds the diagnostic only when the host sets ctx.diagnostics (DEV and preview)', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  for (const dev of [true, false]) {
+    const f = fixture(t, undefined, dev); await flush()
+    f.panel.actions[0].run(); await flush()
+    f.streams[2].error(new TypeError('Load failed')); await flush()
+    const text = f.value('Connection test')
+    assert.match(text, /^Cannot reach ProPresenter\. Check the same Wi-Fi/)
+    if (dev) assert.match(text, /\[DEV: TypeError: Load failed; no CSP violation reported\]$/)
+    else assert.doesNotMatch(text, /DEV:/)
+  }
 })
 test('production disabled registry has zero load/network/timer/listener/storage-write effects', async t => {
   const effects = []

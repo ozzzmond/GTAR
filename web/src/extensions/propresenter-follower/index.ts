@@ -158,9 +158,14 @@ export function activate(ctx: ExtensionContext) {
     // Same allowlisted URL, cancel after initial snapshot: no persistent test stream.
     testTimer = setTimeout(() => controller.abort(), 10000)
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    // issue#600: DEV and preview only. A CSP block fires this event; a mixed-content or network failure does not.
+    const diagnose = ctx.diagnostics === true
+    const violations: string[] = []
+    const onViolation = (event: Event) => { violations.push(String((event as Partial<SecurityPolicyViolationEvent>).violatedDirective ?? 'unknown')) }
+    if (diagnose) page.addEventListener('securitypolicyviolation', onViolation)
     try {
       const response = await request(buildUrl(String(ctx.settings.read().host), paths[0]), controller.signal)
-      if (!response.ok || !response.body) throw Error('No response')
+      if (!response.ok || !response.body) throw Error(`No response (HTTP ${response.status})`)
       if (!current(epoch)) return
       reader = response.body.getReader()
       readers.add(reader)
@@ -180,10 +185,15 @@ export function activate(ctx: ExtensionContext) {
     } catch (error) {
       if (current(epoch)) {
         if (error instanceof UnexpectedResponse) { unexpected[0] = true; testResult = unexpectedMessage }
-        else testResult = `Cannot reach ProPresenter. ${hint}`
+        else {
+          const why = error instanceof Error ? `${error.name}: ${error.message}` : typeof error
+          testResult = `Cannot reach ProPresenter. ${hint}` + (diagnose
+            ? ` [DEV: ${why}; ${violations.length ? `CSP blocked ${violations.join(', ')}` : 'no CSP violation reported'}]` : '')
+        }
       }
     }
     finally {
+      if (diagnose) page.removeEventListener('securitypolicyviolation', onViolation)
       controller.abort()
       if (reader) { cancel(reader); readers.delete(reader) }
       if (testController === controller) {

@@ -50,6 +50,8 @@ export interface ExtensionContext {
   setFollowRefresh?(refresh: () => void): void
   setCurrentSlideRead?(read: (signal: AbortSignal) => Promise<void>): void
   recordSuccessfulConnection?(host: string): void
+  /** True on DEV and preview hosts only: the extension may add technical detail to its test result. */
+  readonly diagnostics?: boolean
 }
 export interface StageSyncPosition {
   readonly lineIndex: number; readonly scrollFraction: number

@@ -1,12 +1,9 @@
 import type { Availability, RegistryEntry } from './contract'
 import { bandSyncAvailability, bandSyncManifest } from './band-sync/manifest'
 import { isIosDevice } from '../utils/iosDevice'
+import { isDevHost } from './host/devHost'
 
-/** DEV and preview hosts only: every subdomain of gtar-web.pages.dev (dev and per-branch previews), never the PROD host itself.
- * Kept local so the registry stays importable from plain Node tests. */
-export function isDevHost(hostname: string | undefined): boolean {
-  return typeof hostname === 'string' && (hostname.endsWith('.gtar-web.pages.dev') || hostname === 'localhost' || hostname === '127.0.0.1')
-}
+export { isDevHost }
 
 export function proPresenterAvailability(): Availability {
   const nav = globalThis.navigator

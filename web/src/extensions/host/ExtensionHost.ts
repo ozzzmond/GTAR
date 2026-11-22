@@ -1,6 +1,7 @@
 export type { FollowSnapshot } from '../contract'
 import { CONTRACT_VERSION } from '../contract'
 import type { ExtensionContext, FollowObservation, FollowSnapshot, ExtensionPanel, ExtensionSettings, ExtensionState, HostEnv, RegistryEntry } from '../contract'
+import { isDevHost } from './devHost'
 import { extensionStorageKey, normalizeSettings, readExtension, validSetting } from './settings'
 import type { ExtensionStorage } from './settings'
 import { activateBandSyncController } from './bandSyncController'
@@ -238,6 +239,7 @@ export class ExtensionHost {
         },
         log: message => { if (current()) this.logSink(this.redact(runtime, message) ?? '') },
         ...(entry.manifest.id === 'propresenter-follower' ? {
+          diagnostics: isDevHost(globalThis.location?.hostname),
           setCurrentSlideRead: (read: (signal: AbortSignal) => Promise<void>) => { if (current()) this.currentSlideRead = signal => current() && !signal.aborted ? read(signal) : Promise.resolve() },
           setFollowRefresh: (refresh: () => void) => { if (current()) this.followRefresh = () => { if (current()) refresh() } },
           publishFollowSnapshot: (snapshot: FollowObservation) => {
