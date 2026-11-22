@@ -231,7 +231,10 @@ export function LiveLyricsControl({
               disabled={!live.canConfirm}
               aria-label={`Confirm same song: ${songTitle}`}
               onClick={() => {
-                if (live.confirm()) onConfirmed?.()
+                if (live.confirm()) {
+                  onConfirmed?.()
+                  handleClose()
+                }
               }}
             >
               Confirm same song

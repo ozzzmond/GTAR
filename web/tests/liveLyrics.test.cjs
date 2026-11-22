@@ -78,13 +78,14 @@ test('fullscreen assisted session follows current only, clears stale matches, re
   await host.enable(manifest.id)
   let song = Object.freeze({ id: 1, title: 'Synthetic', rawContent: chart, key: 'C', originalKey: 'C', confirmedChartKey: 'C', transposeOffset: 3 })
   const before = JSON.stringify(song), lines = parseGtarSong(chart, 3).lines
+  let closes = 0
   let fullscreen = false, suspended = false, account = 'one', navigation = 'library', live
   const snapshot = { live: true, presentation: { uuid: 'presentation-a', title: 'Synthetic presentation', slideIndex: 0 }, current: { uuid: 'slide-a', text: 'Morning light fills the sky' } }
   const { useExtensionHost } = require('../src/extensions/host/useExtensionHost.ts')
   function HeaderObserver() { assert.equal(useExtensionHost(), host); return null }
   function Harness() {
     live = useLiveLyrics(song, lines, fullscreen, suspended, navigation)
-    return React.createElement('div', { id: 'viewport' }, !fullscreen && React.createElement(HeaderObserver), fullscreen && React.createElement(LiveLyricsControl, { live, songTitle: song.title }), React.createElement(SongLineRenderer, { lines, fontSizePx: 24, activeLineIds: live.activeLineIds }))
+    return React.createElement('div', { id: 'viewport' }, !fullscreen && React.createElement(HeaderObserver), fullscreen && React.createElement(LiveLyricsControl, { live, songTitle: song.title, onClose: () => { closes++ } }), React.createElement(SongLineRenderer, { lines, fontSizePx: 24, activeLineIds: live.activeLineIds }))
   }
   const root = createRoot(document.getElementById('root'))
   const render = async () => act(async () => root.render(React.createElement(ExtensionHostContext.Provider, { value: host }, React.createElement(AuthContext.Provider, { value: { session: { user: { sub: account } } } }, React.createElement(Harness)))))
@@ -97,7 +98,7 @@ test('fullscreen assisted session follows current only, clears stale matches, re
     fullscreen = true; await render()
     assert.equal(count(), 0); assert.equal(live.canConfirm, true)
     assert.equal(ctx.signal.aborted, false, 'Header unmount must preserve inherited follower')
-    await confirm(); assert.equal(count(), 2)
+    await confirm(); assert.equal(count(), 2); assert.equal(closes, 1, 'Confirm closes the ProPresenter popover')
     const viewport = document.getElementById('viewport'); viewport.scrollTop = 37
     await emit({ ...snapshot, current: { uuid: 'slide-b', text: 'We sing together' }, next: { text: 'Morning light fills the sky' } })
     assert.equal(count(), 2)
