@@ -164,6 +164,9 @@ const isTypingTarget = (target: EventTarget | null): boolean =>
   target instanceof HTMLTextAreaElement ||
   Boolean((target as HTMLElement | null)?.isContentEditable)
 
+const LIVE_SCROLL_AUTO_RESUME_MS = 1500
+const PP_POPOVER_AUTO_CLOSE_MS = 1000
+
 export const StageView: React.FC<StageViewProps> = ({
   song,
   followSetlist = null,
@@ -646,6 +649,7 @@ export const StageView: React.FC<StageViewProps> = ({
 
   const liveLyrics = useAutoLiveLyrics(manualLyrics, song, autoFollow, followSetlist, activeSetlistSongIndex)
 
+  const [pausedScrollTick, setPausedScrollTick] = useState(0)
   const liveScroll = useLiveLyricScroll(scrollContainerRef, {
     enabled: liveLyrics.confirmed, session: liveLyrics.verificationScope,
     slideKey: liveLyrics.slideKey, range: liveLyrics.scrollRange, speedScrolling: isAutoScrolling,
@@ -783,8 +787,22 @@ export const StageView: React.FC<StageViewProps> = ({
     const max = viewport ? viewport.scrollHeight - viewport.clientHeight : 0
     publishBandPosition(bandLineIndex.current, max > 0 && viewport ? viewport.scrollTop / max : 0)
   }, [publishBandPosition, song.id, bandSyncEnabled, bandLeader])
+  useEffect(() => {
+    if (!liveScroll.paused || !liveLyrics.confirmed || liveLyrics.automaticMode || isAutoScrolling || !liveLyrics.scrollRange) return
+    const timer = setTimeout(liveScroll.controller.resume, LIVE_SCROLL_AUTO_RESUME_MS)
+    return () => clearTimeout(timer)
+  }, [liveScroll.paused, liveScroll.controller, liveLyrics.confirmed, liveLyrics.automaticMode, liveLyrics.scrollRange, isAutoScrolling, pausedScrollTick])
+  const followTarget = autoFollow.state.target
+  const followSettled = autoFollow.state.mode === 'auto' && !autoFollow.state.paused && !autoFollow.state.choices.length && !!followTarget
+  useEffect(() => {
+    // Close the open ProPresenter popover once Auto Follow locks onto a song; reopening stays open until the next target.
+    if (!followSettled) return
+    const timer = setTimeout(() => setIsPpPopoverOpen(false), PP_POPOVER_AUTO_CLOSE_MS)
+    return () => clearTimeout(timer)
+  }, [followSettled, followTarget])
   const handleContainerScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const isLiveLyricScroll = liveScroll.controller.handleScroll()
+    if (!isLiveLyricScroll && liveScroll.paused) setPausedScrollTick(tick => tick + 1)
     const target = e.currentTarget
     const currentTop = target.scrollTop
     const isScrollingDown = currentTop > lastScrollTopRef.current + 5
