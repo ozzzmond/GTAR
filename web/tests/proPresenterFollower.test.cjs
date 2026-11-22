@@ -91,8 +91,8 @@ test('capability detection excludes iOS, desktop iPadOS, Firefox, insecure or mi
 test('issue#600: iPhone/iPad are available on DEV hosts only; every other rule is unchanged', t => {
   property(t, globalThis, 'isSecureContext', true)
   const ios = [['CriOS/157 iPhone', 'iPhone', 5], ['Version/18 Mobile Safari/605 iPhone', 'iPhone', 5], ['Chrome/157 iPad', 'iPad', 5], ['Version/18 Safari/605 Macintosh', 'MacIntel', 5]]
-  for (const [hostname, expected] of [['dev.gtar-web.pages.dev', true], ['localhost', true], ['127.0.0.1', true],
-    ['gtar-web.pages.dev', false], ['gtar.pages.dev', false], ['evil.example', false], [undefined, false]]) {
+  for (const [hostname, expected] of [['dev.gtar-web.pages.dev', true], ['feat-600-propresenter-ios-dev-test.gtar-web.pages.dev', true], ['70c58b8.gtar-web.pages.dev', true], ['localhost', true], ['127.0.0.1', true],
+    ['gtar-web.pages.dev', false], ['gtar.pages.dev', false], ['gtar-web.pages.dev.evil.example', false], ['evilgtar-web.pages.dev', false], ['evil.example', false], [undefined, false]]) {
     property(t, globalThis, 'location', { hostname })
     for (const [ua, platform, touch] of ios) {
       property(t, globalThis, 'navigator', { userAgent: ua, platform, maxTouchPoints: touch })
