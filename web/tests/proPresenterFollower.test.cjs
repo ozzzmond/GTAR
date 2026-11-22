@@ -88,6 +88,32 @@ test('capability detection excludes iOS, desktop iPadOS, Firefox, insecure or mi
   }
 })
 
+test('issue#600: iPhone/iPad are available on DEV hosts only; every other rule is unchanged', t => {
+  property(t, globalThis, 'isSecureContext', true)
+  const ios = [['CriOS/157 iPhone', 'iPhone', 5], ['Version/18 Mobile Safari/605 iPhone', 'iPhone', 5], ['Chrome/157 iPad', 'iPad', 5], ['Version/18 Safari/605 Macintosh', 'MacIntel', 5]]
+  for (const [hostname, expected] of [['dev.gtar-web.pages.dev', true], ['localhost', true], ['127.0.0.1', true],
+    ['gtar-web.pages.dev', false], ['gtar.pages.dev', false], ['evil.example', false], [undefined, false]]) {
+    property(t, globalThis, 'location', { hostname })
+    for (const [ua, platform, touch] of ios) {
+      property(t, globalThis, 'navigator', { userAgent: ua, platform, maxTouchPoints: touch })
+      assert.equal(proPresenterAvailability().available, expected, `${hostname} ${ua}`)
+    }
+    // Non-iOS rules do not depend on the host.
+    property(t, globalThis, 'navigator', { userAgent: 'Firefox/140', platform: 'Linux', maxTouchPoints: 0 })
+    assert.equal(proPresenterAvailability().available, false, `${hostname} firefox`)
+    property(t, globalThis, 'navigator', { userAgent: 'Chrome/157 Android', platform: 'Linux', maxTouchPoints: 5 })
+    assert.equal(proPresenterAvailability().available, true, `${hostname} android chrome`)
+  }
+  // The DEV iOS test still needs the same browser APIs and a secure context.
+  property(t, globalThis, 'location', { hostname: 'dev.gtar-web.pages.dev' })
+  property(t, globalThis, 'navigator', { userAgent: 'Version/18 Mobile Safari/605 iPhone', platform: 'iPhone', maxTouchPoints: 5 })
+  property(t, globalThis, 'isSecureContext', false)
+  assert.equal(proPresenterAvailability().available, false)
+  property(t, globalThis, 'isSecureContext', true)
+  property(t, globalThis, 'fetch', undefined)
+  assert.equal(proPresenterAvailability().available, false)
+})
+
 function fixture(t, fetcher) {
   const doc = new EventTarget(); doc.hidden = false
   property(t, globalThis, 'document', doc)

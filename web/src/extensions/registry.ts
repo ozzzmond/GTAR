@@ -2,9 +2,18 @@ import type { Availability, RegistryEntry } from './contract'
 import { bandSyncAvailability, bandSyncManifest } from './band-sync/manifest'
 import { isIosDevice } from '../utils/iosDevice'
 
+/** DEV hosts only, same hostnames as utils/env.ts. Kept local so the registry stays importable from plain Node tests. */
+export function isDevHost(hostname: string | undefined): boolean {
+  return typeof hostname === 'string' && (hostname.includes('dev.gtar-web.pages.dev') || hostname === 'localhost' || hostname === '127.0.0.1')
+}
+
 export function proPresenterAvailability(): Availability {
   const nav = globalThis.navigator
-  return !isIosDevice(nav) && /(?:Chrome|Chromium)\/\d+/.test(nav?.userAgent ?? '') && globalThis.isSecureContext === true &&
+  // issue#600: iPhone/iPad stay N/A in PROD. On DEV hosts they are available so the real WebKit result
+  // (mixed content, Local Network) can be recorded on a device; no other platform rule changes.
+  const iosDevTest = isIosDevice(nav) && isDevHost(globalThis.location?.hostname)
+  const browserOk = iosDevTest || (!isIosDevice(nav) && /(?:Chrome|Chromium)\/\d+/.test(nav?.userAgent ?? ''))
+  return browserOk && globalThis.isSecureContext === true &&
     typeof globalThis.fetch === 'function' && typeof globalThis.ReadableStream === 'function'
     ? { available: true } : { available: false, reason: 'Not available on this device/browser' }
 }
