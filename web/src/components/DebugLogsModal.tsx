@@ -9,6 +9,8 @@ import {
   Filter,
   Share2,
   History,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import { appLogger, type LogEntry, type LogLevel } from '../utils/logger'
 import { RecoveryDataCard } from './RecoveryDataCard'
@@ -23,6 +25,7 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [copied, setCopied] = useState(false)
   const [filterLevel, setFilterLevel] = useState<'ALL' | LogLevel>('ALL')
+  const [recoveryExpanded, setRecoveryExpanded] = useState(false)
   const logsContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -99,19 +102,20 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in select-none">
       <div className="relative w-full max-w-4xl max-h-[90vh] bg-app-surface border border-app-border rounded-2xl shadow-2xl flex flex-col overflow-hidden text-app-text">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-app-border bg-app-base">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-app-surface text-app-action border border-app-border">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-app-border bg-app-base gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 rounded-xl bg-app-surface text-app-action border border-app-border shrink-0">
               <Terminal className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-app-heading">Web Debug & Crash Logs</h2>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-app-border text-app-action font-bold">
-                  {logs.length} entries
-                </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-app-heading truncate">Web Debug &amp; Crash Logs</h2>
+              <div className="sm:hidden text-xs text-app-muted mt-0.5">
+                {logs.length} {logs.length === 1 ? 'entry' : 'entries'}
               </div>
             </div>
+            <span className="hidden sm:inline-flex text-[10px] font-mono px-2 py-0.5 rounded-full bg-app-border text-app-action font-bold shrink-0">
+              {logs.length} entries
+            </span>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -119,7 +123,7 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-xl hover:bg-app-surface text-app-muted hover:text-app-heading transition-colors cursor-pointer"
+              className="p-1.5 sm:p-1.5 rounded-xl hover:bg-app-surface text-app-muted hover:text-app-heading transition-colors cursor-pointer flex items-center justify-center"
               aria-label="Close dialog"
             >
               <X className="w-5 h-5" />
@@ -128,16 +132,16 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
         </div>
 
         {/* Action Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6 py-2.5 bg-app-surface border-b border-app-border">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2 px-4 sm:px-6 py-2.5 bg-app-surface border-b border-app-border">
           {/* Level Filters */}
-          <div className="flex items-center gap-1 text-xs">
-            <Filter className="w-3.5 h-3.5 text-app-muted mr-1" />
+          <div className="flex items-center gap-1.5 sm:gap-1 text-xs overflow-x-auto pb-0.5 sm:pb-0 scrollbar-none">
+            <Filter className="w-3.5 h-3.5 text-app-muted mr-1 shrink-0" />
             {(['ALL', 'ERROR', 'WARN', 'INFO', 'DEBUG'] as const).map((lvl) => (
               <button
                 key={lvl}
                 type="button"
                 onClick={() => setFilterLevel(lvl)}
-                className={`px-2 py-1 rounded-lg font-mono text-[11px] font-bold transition-all cursor-pointer ${
+                className={`h-7 sm:h-auto min-h-7 sm:min-h-0 px-2.5 sm:px-2 py-1 rounded-full sm:rounded-lg font-mono text-xs sm:text-[11px] font-bold transition-all cursor-pointer shrink-0 flex items-center justify-center ${
                   filterLevel === lvl
                     ? 'bg-app-action text-app-on-action'
                     : 'bg-app-base text-app-muted hover:text-app-heading border border-app-border'
@@ -149,55 +153,65 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleCopyAll}
-              className="px-3 py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-text hover:text-app-action border border-app-border text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-              aria-label="Copy entire log output to clipboard"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-status-success" />
-                  <span className="text-status-success">Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy All</span>
-                </>
-              )}
-            </button>
-
-            {canShare && (
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            {/* Primary / secondary row */}
+            <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
               <button
                 type="button"
-                data-testid="debug-logs-share"
-                onClick={handleShare}
-                className="px-3 py-1.5 rounded-xl bg-app-base border border-app-border hover:border-app-action text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                onClick={handleCopyAll}
+                className="w-full sm:w-auto min-h-11 sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-text hover:text-app-action border border-app-border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                aria-label="Copy entire log output to clipboard"
               >
-                <Share2 className="w-3.5 h-3.5" />
-                <span>Share</span>
+                {copied ? (
+                  <>
+                    <Check className="w-5 h-5 sm:w-3.5 sm:h-3.5 text-status-success shrink-0" />
+                    <span className="text-status-success">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-5 h-5 sm:w-3.5 sm:h-3.5 shrink-0" />
+                    <span className="sm:hidden">Copy</span>
+                    <span className="hidden sm:inline">Copy All</span>
+                  </>
+                )}
               </button>
-            )}
 
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="px-3 py-1.5 rounded-xl bg-app-action hover:bg-app-action text-app-on-action text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download .log</span>
-            </button>
+              {canShare && (
+                <button
+                  type="button"
+                  data-testid="debug-logs-share"
+                  onClick={handleShare}
+                  className="w-full sm:w-auto min-h-11 sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-xl bg-app-base border border-app-border hover:border-app-action text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                >
+                  <Share2 className="w-5 h-5 sm:w-3.5 sm:h-3.5 shrink-0" />
+                  <span>Share</span>
+                </button>
+              )}
 
-            <button
-              type="button"
-              onClick={handleClearLogs}
-              className="px-3 py-1.5 rounded-xl bg-[#DC6E67]/20 hover:bg-[#DC6E67] text-status-error hover:text-white border border-[#DC6E67]/40 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Clear</span>
-            </button>
+              <button
+                type="button"
+                onClick={handleDownload}
+                className={`w-full sm:w-auto min-h-11 sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-xl bg-app-action hover:bg-app-action text-app-on-action text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm active:scale-95 ${
+                  !canShare ? 'col-span-1' : 'col-span-2 sm:col-span-1'
+                }`}
+              >
+                <Download className="w-5 h-5 sm:w-3.5 sm:h-3.5 shrink-0" />
+                <span className="sm:hidden">Download</span>
+                <span className="hidden sm:inline">Download .log</span>
+              </button>
+            </div>
+
+            {/* Clear Button (destructive action kept separate on mobile) */}
+            <div className="pt-1 sm:pt-0 border-t sm:border-t-0 border-app-border/40 sm:border-transparent">
+              <button
+                type="button"
+                onClick={handleClearLogs}
+                className="w-full sm:w-auto min-h-11 sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-xl bg-[#DC6E67]/20 hover:bg-[#DC6E67] text-status-error hover:text-white border border-[#DC6E67]/40 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-5 h-5 sm:w-3.5 sm:h-3.5 shrink-0" />
+                <span>Clear</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -260,14 +274,30 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
 
         {/* Recovery Data Management Section */}
         <div data-testid="debug-logs-recovery-section" className="border-t border-app-border bg-app-surface/90 p-4 sm:p-5 overflow-y-auto max-h-[40vh] space-y-3">
-          <div className="flex items-center gap-2">
-            <History className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-            <h3 className="font-extrabold text-xs sm:text-sm tracking-wide text-app-heading">Recovery Data</h3>
+          <button
+            type="button"
+            onClick={() => setRecoveryExpanded((prev) => !prev)}
+            aria-expanded={recoveryExpanded}
+            className="w-full flex items-center justify-between text-left group cursor-pointer sm:cursor-default"
+          >
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+              <h3 className="font-extrabold text-xs sm:text-sm tracking-wide text-app-heading">Recovery Data</h3>
+            </div>
+            <div className="sm:hidden text-app-muted group-hover:text-app-heading p-1">
+              {recoveryExpanded ? (
+                <ChevronDown className="w-4 h-4" aria-hidden="true" />
+              ) : (
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
+              )}
+            </div>
+          </button>
+          <div className={`${recoveryExpanded ? 'block' : 'hidden'} sm:block space-y-3`}>
+            <p className="text-[11px] text-app-muted">
+              Older copies of your songbook that GTAR kept on this device. Your current songbook is not affected.
+            </p>
+            <RecoveryDataCard />
           </div>
-          <p className="text-[11px] text-app-muted">
-            Older copies of your songbook that GTAR kept on this device. Your current songbook is not affected.
-          </p>
-          <RecoveryDataCard />
         </div>
       </div>
     </div>
