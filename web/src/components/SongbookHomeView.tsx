@@ -1159,7 +1159,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
-                <DropdownPortal anchorEl={libraryMenuAnchor} open={!!libraryMenuAnchor} onClose={() => setLibraryMenuAnchor(null)} align="right">
+                <DropdownPortal anchorEl={libraryMenuAnchor} open={!!libraryMenuAnchor} onClose={() => setLibraryMenuAnchor(null)} align="right" zIndex={40}>
                   <div role="menu" onClick={(e) => e.stopPropagation()}
                     className="w-52 bg-app-surface border border-app-border rounded-xl shadow-2xl p-1.5 text-xs animate-in fade-in zoom-in-95 duration-100">
                     {onOpenImportSongs && (

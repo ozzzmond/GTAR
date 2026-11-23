@@ -43,7 +43,9 @@ for (const width of [320, 1280]) test(`portal actions, viewport bounds and dismi
       await click(trigger)
       assert.equal(portal().parentElement, document.body, 'portal escapes card overflow')
       assert.equal(portal().style.position, 'fixed')
-      assert.equal(portal().style.zIndex, '25', 'below modal/drawer z-50')
+      // Card menu keeps the default 25. The Songs Library menu sits above the sticky filter bar (z-30), since it opens over the sort row on mobile.
+      assert.equal(portal().style.zIndex, id === 'songs-library-menu-btn' ? '40' : '25', 'portal z-index per menu')
+      assert.ok(Number(portal().style.zIndex) < 50, 'below modal/drawer z-50')
       assert.equal(portal().style.left, `${width - 184}px`)
       assert.equal(portal().style.top, '424px', 'flips above bottom-edge anchor')
       await act(async () => portal().dispatchEvent(new window.Event('scroll')))
