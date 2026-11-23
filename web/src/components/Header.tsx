@@ -486,8 +486,13 @@ export const Header: React.FC<HeaderProps> = ({
         advancedToolsButtonRef.current?.focus({ preventScroll: true })
       }
     }
+    const handleToolOpen = () => setShowAdvancedToolsMenu(false)
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('gtar-stage-tool-active-changed', handleToolOpen)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('gtar-stage-tool-active-changed', handleToolOpen)
+    }
   }, [showAdvancedToolsMenu])
 
   // Filter matching songs for real-time search dropdown overlay

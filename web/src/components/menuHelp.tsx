@@ -49,7 +49,7 @@ export const AdvancedToolsHelp: React.FC<MenuHelpProps & { extensions: Array<{ i
     quickSummary="Optional integrations and song sources. Tap a row for its settings; the switch only turns it on or off."
     topics={topics([
       ['Online Song Sources', 'Lets the search bar also look for chord charts on the websites you choose. It stays off until you switch it on; your searches are then sent to those sites.'],
-      ...stageTools.map((name): Entry => [name, `Adds a ${name} button to the Stage toolbar. Switching it off also stops it.`]),
+      ...stageTools.map((name): Entry => [name, `Opens the ${name} panel from any screen and adds its button to the Stage toolbar. Switching it off stops it and closes its panel.`]),
       ['MIDI', 'Connects a MIDI pedal or controller. It stays off until you switch it on. Open the row to connect a device and choose what each pedal or button does on Stage.'],
       ...extensions.map(({ id, name, summary }): Entry => [name, EXTENSION_HELP[id] ?? summary]),
       ['Status labels', 'Starting, Offline or Error appear beside a tool that needs attention. N/A means this device or browser cannot run it.'],

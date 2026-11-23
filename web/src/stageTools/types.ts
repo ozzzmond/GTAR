@@ -18,4 +18,6 @@ export interface StageTool {
   Help?: ComponentType<{ prefer?: 'below' | 'above' }>
   /** Releases everything the tool holds (sound, microphone). Runs when it is switched OFF. */
   stop(): void
+  /** Optional hook returning whether the tool is actively running in the background. */
+  useIsRunning?: () => boolean
 }
