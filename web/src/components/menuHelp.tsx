@@ -75,9 +75,10 @@ export const BandSyncHelp: React.FC<MenuHelpProps> = (props) => (
   />
 )
 
-export const SongsLibraryHelp: React.FC<MenuHelpProps & { canImport?: boolean; canCheckDuplicates?: boolean }> = ({ canImport = false, canCheckDuplicates = false, ...rest }) => (
+export const SongsLibraryHelp: React.FC<MenuHelpProps & { canImport?: boolean; canCheckDuplicates?: boolean }> = ({ canImport = false, canCheckDuplicates = false, className = '', ...rest }) => (
   <ContextualHelp
     {...rest}
+    className={`[&>button]:w-11 [&>button]:h-11 [&>button]:rounded-xl sm:[&>button]:w-8 sm:[&>button]:h-8 sm:[&>button]:rounded-lg ${className}`}
     id="songs-library-help"
     title="Songs"
     buttonLabel="Help for managing songs"
