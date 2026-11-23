@@ -335,12 +335,12 @@ test('02_03_04_HEADER: icon normalization, mascot container styling, version in 
     // 02: Normalized action icon in settings gear and container dimensions matching mascot (#434)
     const settings = document.querySelector('[data-testid="header-settings"]')
     assert.ok(settings, 'Settings button must exist')
-    assert.ok(settings.classList.contains('w-9') && settings.classList.contains('h-9') && settings.classList.contains('rounded-xl'), 'Settings container normalized to w-9 h-9 rounded-xl')
+    assert.ok(settings.classList.contains('w-11') && settings.classList.contains('h-11') && settings.classList.contains('sm:w-9') && settings.classList.contains('sm:h-9') && settings.classList.contains('rounded-xl'), 'Settings container 44px mobile, 36px from sm, rounded-xl')
     assert.ok(settings.querySelector('svg.w-5.h-5'), 'Settings icon must be normalized to w-5 h-5')
 
     const themeToggle = document.querySelector('[data-testid="header-theme-mode-toggle"]')
     assert.ok(themeToggle, 'Theme mode toggle must exist')
-    assert.ok(themeToggle.classList.contains('w-9') && themeToggle.classList.contains('h-9') && themeToggle.classList.contains('rounded-xl'), 'Theme toggle normalized to w-9 h-9 rounded-xl')
+    assert.ok(themeToggle.classList.contains('w-11') && themeToggle.classList.contains('h-11') && themeToggle.classList.contains('sm:w-9') && themeToggle.classList.contains('sm:h-9') && themeToggle.classList.contains('rounded-xl'), 'Theme toggle 44px mobile, 36px from sm, rounded-xl')
 
     // Cloud sync button retired from header (#434)
     assert.equal(document.querySelector('[data-testid="header-cloud-sync-button"]'), null, 'Cloud sync button retired from header')

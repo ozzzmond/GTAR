@@ -382,7 +382,7 @@ test('#359 PR-C: Header icon-only status button and responsive layout across wid
     assert.equal(cloudBtn, null, `Cloud status button retired at ${width}px`)
     assert.ok(settings, `Settings gear must exist at ${width}px`)
     assert.equal(authDot, null, `Auth dot retired at ${width}px`)
-    assert.match(settings.className, /(?:min-h-11 min-w-11|w-9 h-9)/, `Settings button has normalized target at ${width}px`)
+    assert.match(settings.className, /w-11 h-11 sm:w-9 sm:h-9/, `Settings button has normalized target at ${width}px`)
     assert.ok(settings.querySelector('svg'), `Settings icon rendered at ${width}px`)
     assert.match(settings.getAttribute('aria-label'), /^Settings/, `aria-label preserved at ${width}px`)
 
@@ -390,10 +390,10 @@ test('#359 PR-C: Header icon-only status button and responsive layout across wid
       // Compact (<md) layout: hamburger left, logo, search icon, status icon, avatar
       assert.ok(hamburger, `Hamburger drawer button must exist at ${width}px`)
       assert.match(hamburger.className, /md:hidden/, `Hamburger hidden on >=md at ${width}px`)
-      assert.match(hamburger.className, /(?:min-h-11 min-w-11|w-9 h-9)/, `Hamburger touch target >=44px at ${width}px`)
+      assert.match(hamburger.className, /w-11 h-11 sm:w-9 sm:h-9/, `Hamburger touch target >=44px at ${width}px`)
 
       assert.ok(searchTrigger, `Search icon trigger must be rendered at ${width}px`)
-      assert.match(searchTrigger.className, /(?:min-h-11 min-w-11|w-9 h-9)/, `Search trigger touch target >=44px at ${width}px`)
+      assert.match(searchTrigger.className, /w-11 h-11 sm:w-9 sm:h-9/, `Search trigger touch target >=44px at ${width}px`)
       assert.equal(searchInput, null, `Inline search input should not be visible before open at ${width}px`)
 
       // Compact diagnostics strip remains visible

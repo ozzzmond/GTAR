@@ -115,7 +115,7 @@ test('2_FULLSCREEN_THEME: Dark/Light mode toggle inside fullscreen options besid
 
 test('3_STICKY_HEADERS: Music Explorer and second-row headers are sticky with z-index hierarchy', () => {
   const cssSource = read('index.css')
-  assert.match(cssSource, /--app-header-height:\s*57px;/, 'CSS defines --app-header-height token')
+  assert.match(cssSource, /--app-header-height:\s*61px;/, 'CSS defines --app-header-height token')
 
   const explorerSource = read('components/ExplorerNavigation.tsx')
   assert.match(explorerSource, /sticky top-\[var\(--app-header-height[^\]]*\)\] z-20/, 'Music Explorer sidebar is sticky at z-20')

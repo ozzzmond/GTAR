@@ -140,14 +140,14 @@ test('GH436_CHECKLIST_02: Setlists card exposes hover Rename and Share actions; 
   assert.ok(songHtml.includes('data-testid="song-setlist-count-0"'), 'Song card preserves setlist-count badge')
 })
 
-test('GH436_CHECKLIST_03: Header logo is normalized to 40x40px (w-10 h-10)', () => {
+test('GH436_CHECKLIST_03: Header logo is 44px below sm and 40px from sm (w-11 h-11 sm:w-10 sm:h-10)', () => {
   const headerHtml = ReactDOMServer.renderToStaticMarkup(
     React.createElement(Header, {
       currentView: 'songbook',
       onNavigate: () => {},
     })
   )
-  assert.ok(headerHtml.includes('w-10 h-10'), 'Header logo container is normalized to w-10 h-10 (40x40px)')
+  assert.ok(headerHtml.includes('w-11 h-11 sm:w-10 sm:h-10'), 'Header logo container is 44px mobile, 40px from sm')
 })
 
 test('GH436_MUST_FIX_2: Stage Options close button and modified controls stay >=44px below sm', () => {
