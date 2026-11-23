@@ -41,7 +41,7 @@ const StageToolButton: React.FC<StageToolButtonProps> = ({ tool, buttonClass, is
       {isRunning && (
         <span
           data-testid={`stage-tool-running-${tool.id}`}
-          className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse shrink-0"
+          className="w-2 h-2 rounded-full bg-app-action animate-pulse shrink-0"
           aria-hidden="true"
         />
       )}

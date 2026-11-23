@@ -8,6 +8,7 @@ import {
   useActiveStageTool,
   useEnabledStageTools,
 } from '../stageTools/settings'
+import type { StageTool } from '../stageTools/types'
 
 interface StageToolRowsProps {
   /** Same row style the Advanced Tools popover uses for its other rows. */
@@ -48,9 +49,9 @@ const StageToolRow: React.FC<StageToolRowProps> = ({ tool, rowClass, isOn, onOpe
         {isRunning && (
           <span
             data-testid={`stage-tool-row-running-${tool.id}`}
-            className="inline-flex items-center gap-1 text-xs font-medium text-[#10B981] mr-1"
+            className="inline-flex items-center gap-1 text-xs font-medium text-app-action mr-1"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse" aria-hidden="true" />
+            <span className="w-1.5 h-1.5 rounded-full bg-app-action animate-pulse" aria-hidden="true" />
             <span>Running</span>
           </span>
         )}
