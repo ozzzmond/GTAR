@@ -1064,7 +1064,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         {isSongsContext && (
           <div data-testid="songs-library-toolbar" className="contents sm:flex sm:items-center sm:gap-1.5 sm:ml-auto sm:flex-wrap sm:justify-end">
             {songs.length > 0 && (
-              <div data-testid="songs-library-filters" className="col-start-1 row-start-2 grid grid-cols-2 items-center gap-2 min-w-0 sm:ml-auto sm:flex sm:flex-nowrap sm:gap-1.5">
+              <div data-testid="songs-library-filters" className="contents sm:ml-auto sm:flex sm:flex-nowrap sm:items-center sm:gap-1.5 sm:min-w-0">
+                <div className={`col-start-1 row-start-2 grid ${activeSetlists.length > 0 ? 'grid-cols-2' : 'grid-cols-1'} items-center gap-2 min-w-0 sm:contents`}>
                 <select
                   data-testid="filter-metadata-select"
                   aria-label="Filter songs by metadata"
@@ -1092,23 +1093,24 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     ))}
                   </select>
                 )}
+                </div>
                 <select
                   data-testid="filter-tags-select"
                   aria-label="Filter songs by tags"
                   value={filterTags}
                   onChange={(e) => handleFilterTagsChange(e.target.value as TagsFilterOption)}
-                  className="h-11 min-h-11 sm:h-auto sm:min-h-9 min-w-0 w-full sm:w-auto sm:flex-none bg-app-surface border border-app-border text-app-text text-xs rounded-xl sm:rounded-lg px-2 sm:px-2.5 truncate outline-none cursor-pointer"
+                  className="col-span-2 row-start-3 mt-1 sm:mt-0 h-11 min-h-11 sm:h-auto sm:min-h-9 min-w-0 w-full sm:w-auto sm:flex-none bg-app-surface border border-app-border text-app-text text-xs rounded-xl sm:rounded-lg px-2 sm:px-2.5 truncate outline-none cursor-pointer"
                 >
                   <option value="ALL">All Tags</option>
                   <option value="TAGGED">Tagged</option>
                   <option value="NO_TAG">No tag</option>
                 </select>
-                <div role="group" aria-label="Sort songs" className={`${activeSetlists.length === 0 ? 'col-span-2 sm:col-span-1' : ''} h-11 sm:h-auto min-w-0 flex items-center bg-app-surface border border-app-border rounded-xl sm:rounded-lg text-xs w-full sm:w-fit sm:shrink-0`}>
+                <div role="group" aria-label="Sort songs" className="col-span-2 row-start-4 mt-1 sm:mt-0 grid grid-cols-3 gap-2 min-w-0 w-full text-xs sm:flex sm:items-center sm:gap-0 sm:bg-app-surface sm:border sm:border-app-border sm:rounded-lg sm:w-fit sm:shrink-0">
                   {(['title', 'artist', 'date'] as const).map((field) => (
                     <button key={field} type="button" data-testid={`sort-${field}`} aria-pressed={sortBy === field}
                       onClick={() => handleSortChange(field)}
-                      className={`h-11 sm:h-auto flex-1 sm:flex-none min-w-0 min-h-11 sm:min-h-9 px-1 sm:px-2.5 rounded-xl sm:rounded-lg font-medium whitespace-nowrap transition-colors cursor-pointer ${
-                        sortBy === field ? 'bg-app-action text-app-on-action' : 'text-app-muted hover:text-app-text'}`}>
+                      className={`h-11 min-h-11 sm:h-auto sm:min-h-9 min-w-0 px-2 sm:px-2.5 flex items-center justify-center text-center border rounded-xl sm:rounded-lg sm:border-0 font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                        sortBy === field ? 'bg-app-action border-app-action text-app-on-action' : 'bg-app-surface border-app-border text-app-text sm:bg-transparent sm:text-app-muted sm:hover:text-app-text'}`}>
                       {field === 'title' ? 'Title' : field === 'artist' ? 'Artist' : 'Date'}{sortBy === field && (sortDirection === 'asc' ? ' ↑' : ' ↓')}
                     </button>
                   ))}
