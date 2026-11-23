@@ -136,36 +136,43 @@ export const StageToolPanel: React.FC<StageToolPanelProps> = ({ tool, anchor, on
   }, [anchor])
 
   return createPortal(
-    <div
-      ref={panelRef}
-      role="dialog"
-      aria-label={tool.name}
-      tabIndex={-1}
-      data-testid={`stage-tool-panel-${tool.id}`}
-      onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(true) } }}
-      className="fixed z-40 inset-x-0 bottom-0 max-h-[50dvh] overflow-y-auto rounded-t-2xl border border-app-border bg-app-surface shadow-2xl pb-[env(safe-area-inset-bottom)] focus:outline-none sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-[var(--stage-tool-top,65px)] sm:w-80 sm:max-h-[calc(100dvh-var(--stage-tool-top,65px)-1rem)] sm:rounded-2xl sm:pb-0"
-    >
-      <div className="flex items-center justify-between gap-2 pl-4 pr-1.5 border-b border-app-border">
-        <div className="flex min-w-0 items-center gap-2">
-          <tool.Icon className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-          <h2 className="text-sm font-bold text-app-heading truncate">{tool.name}</h2>
+    <>
+      <div
+        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs sm:hidden"
+        onClick={() => onClose(true)}
+        aria-hidden="true"
+      />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-label={tool.name}
+        tabIndex={-1}
+        data-testid={`stage-tool-panel-${tool.id}`}
+        onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(true) } }}
+        className="fixed z-50 inset-x-4 top-1/2 -translate-y-1/2 max-h-[90dvh] overflow-y-auto rounded-2xl border border-app-border bg-app-surface shadow-2xl focus:outline-none sm:z-40 sm:inset-x-auto sm:top-[var(--stage-tool-top,65px)] sm:bottom-auto sm:right-4 sm:translate-y-0 sm:w-80 sm:max-h-[calc(100dvh-var(--stage-tool-top,65px)-1rem)]"
+      >
+        <div className="flex items-center justify-between gap-2 pl-4 pr-1.5 border-b border-app-border">
+          <div className="flex min-w-0 items-center gap-2">
+            <tool.Icon className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+            <h2 className="text-sm font-bold text-app-heading truncate">{tool.name}</h2>
+          </div>
+          <div className="flex shrink-0 items-center">
+            {tool.Help && <tool.Help prefer="below" />}
+            <button
+              type="button"
+              onClick={() => onClose(true)}
+              aria-label={`Close ${tool.name}`}
+              className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-app-muted hover:text-app-heading cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center">
-          {tool.Help && <tool.Help prefer="below" />}
-        <button
-          type="button"
-          onClick={() => onClose(true)}
-          aria-label={`Close ${tool.name}`}
-          className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-app-muted hover:text-app-heading cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action"
-        >
-          <X className="w-4 h-4" aria-hidden="true" />
-        </button>
+        <div className="p-4">
+          <tool.Panel />
         </div>
       </div>
-      <div className="p-4">
-        <tool.Panel />
-      </div>
-    </div>,
+    </>,
     document.body,
   )
 }

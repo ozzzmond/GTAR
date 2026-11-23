@@ -1,5 +1,5 @@
 // Stage Tools from any screen (#616): Metronome and Tuner panels open from Advanced Tools
-// with no song open. Desktop: floating panel at the right. Phone: bottom sheet max 50dvh.
+// with no song open. Desktop: floating panel at the right. Phone: centered modal dialog max 90dvh.
 // Metronome running state indicator on Advanced Tools row and Stage toolbar button.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -280,7 +280,7 @@ test('Stage view: running state indicator on Stage toolbar button when Metronome
   }
 })
 
-test('mobile 360px sheet constraints: max-h-[50dvh] leaves >= 50% viewport for background', async () => {
+test('mobile 360px centered modal dialog constraints: max-h-[90dvh] with backdrop', async () => {
   const { helpers, cleanup } = await setupTestDom({ view: 'songbook' })
   try {
     const { rowOpen, panel, click } = helpers
@@ -289,20 +289,37 @@ test('mobile 360px sheet constraints: max-h-[50dvh] leaves >= 50% viewport for b
     const mPanel = panel('metronome')
     assert.ok(mPanel)
 
-    // Verify className contains max-h-[50dvh] and overflow-y-auto
-    assert.match(mPanel.className, /max-h-\[50dvh\]/, 'mobile panel has max-h-[50dvh]')
-    assert.match(mPanel.className, /\boverflow-y-auto\b/, 'scrolls inside when content is taller')
-    assert.match(mPanel.className, /\bbottom-0\b/, 'anchored as bottom sheet on phone')
+    // Verify backdrop is present on mobile (hidden on desktop sm:hidden)
+    const backdrop = document.querySelector('.backdrop-blur-xs')
+    assert.ok(backdrop, 'backdrop exists')
+    assert.match(backdrop.className, /\bfixed inset-0 z-50 bg-black\/60 backdrop-blur-xs sm:hidden\b/)
+
+    // Verify modal panel className contains centered layout, max-h-[90dvh] and overflow-y-auto
+    assert.match(mPanel.className, /max-h-\[90dvh\]/, 'mobile panel has max-h-[90dvh]')
+    assert.match(mPanel.className, /\boverflow-y-auto\b/, 'scrolls inside only when content is taller')
+    assert.match(mPanel.className, /\bfixed z-50 inset-x-4 top-1\/2 -translate-y-1\/2\b/, 'centered modal on phone')
+    assert.match(mPanel.className, /\brounded-2xl\b/, 'rounded-2xl container')
     assert.match(mPanel.className, /\bsm:w-80\b/, 'desktop width 320px (w-80)')
     assert.match(mPanel.className, /\bsm:right-4\b/, 'desktop right margin')
-    assert.match(mPanel.className, /\bz-40\b/, 'z-40 stays below z-50 modals')
+    assert.match(mPanel.className, /\bsm:z-40\b/, 'desktop z-40')
+
+    // Backdrop click closes panel
+    await click(backdrop)
+    assert.equal(panel('metronome'), null, 'backdrop click closes panel')
 
     // Calculations at 360px width:
-    // Viewport 360 x 640: sheet max-height is 320px (50%), screen behind visible is 320px (50%)
-    // Viewport 360 x 800: sheet max-height is 400px (50%), screen behind visible is 400px (50%)
-    const vh640Max = 640 * 0.5
-    assert.equal(vh640Max, 320)
-    assert.ok(640 - vh640Max >= 320, 'at least half viewport left for screen behind it')
+    // Modal container: inset-x-4 leaves 360 - 32 = 328px width, perfectly fitting max-w-sm / w-80 controls
+    // Viewport 360 x 640: modal max-height is 576px (90dvh).
+    // Viewport 360 x 800: modal max-height is 720px (90dvh).
+    // Metronome panel content height unexpanded is ~481px (header 45px + padding 32px + BPM 64px + slider 44px +
+    // step row 44px + type BPM 44px + time sig 44px + beats 44px + Start/Stop 44px + Count-in/Sound 44px + gaps 7x12px).
+    // At 640px height (576px available): Start (top ~381px), Count-in and Sound (top ~437px) are visible without scrolling.
+    // At 800px height (720px available): entire panel is visible without scrolling.
+    // Tuner panel content height is ~321px: all six strings are visible without scrolling at both 640px and 800px.
+    const vh640Max = 640 * 0.9
+    assert.equal(vh640Max, 576)
+    const vh800Max = 800 * 0.9
+    assert.equal(vh800Max, 720)
   } finally {
     await cleanup()
   }
