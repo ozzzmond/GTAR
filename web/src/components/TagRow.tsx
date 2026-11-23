@@ -1,12 +1,13 @@
 import React, { useState } from 'react'
-import { Tag } from 'lucide-react'
+import { MoreHorizontal, Tag } from 'lucide-react'
 import { normalizeTags, tagChipStyle } from '../utils/songTags'
 import { useTagLibrary } from '../utils/tagLibraryContext'
 
-const rowActionBtn = 'min-h-11 min-w-11 rounded-lg text-app-muted hover:bg-app-surface hover:text-app-heading flex items-center justify-center transition-colors'
-const searchBoxInput = 'min-h-[36px] w-full min-w-0 rounded-xl border border-app-border hover:border-app-border/80 bg-app-surface px-3 py-1.5 text-xs text-app-text placeholder:text-app-muted focus:border-app-accent focus:ring-2 focus:ring-app-accent/20 focus:outline-none transition-all duration-200'
-const primaryPillBtn = 'relative h-7 px-2.5 rounded-xl bg-app-action hover:brightness-110 text-app-on-action border border-app-action/50 font-medium text-xs transition-colors flex items-center justify-center cursor-pointer whitespace-nowrap after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-[\'\']'
-const secondaryPillBtn = 'relative h-7 px-2.5 rounded-xl bg-app-surface hover:bg-app-base border border-app-border hover:border-app-border/80 text-app-text font-medium text-xs transition-colors flex items-center justify-center cursor-pointer whitespace-nowrap after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-[\'\']'
+const rowActionBtn = 'min-h-11 min-w-11 rounded-xl sm:rounded-lg max-sm:h-(--control-h) max-sm:min-h-(--control-h) max-sm:shrink-0 text-app-muted hover:bg-app-surface hover:text-app-heading flex items-center justify-center transition-colors'
+const editorButton = 'max-sm:h-(--control-h) max-sm:min-h-(--control-h) max-sm:after:hidden'
+const searchBoxInput = 'min-h-[36px] max-sm:min-h-(--control-h) w-full min-w-0 rounded-xl border border-app-border hover:border-app-border/80 bg-app-surface px-3 py-1.5 text-xs text-app-text placeholder:text-app-muted focus:border-app-accent focus:ring-2 focus:ring-app-accent/20 focus:outline-none transition-all duration-200'
+const primaryPillBtn = `${editorButton} relative h-7 px-2.5 rounded-xl bg-app-action hover:brightness-110 text-app-on-action border border-app-action/50 font-medium text-xs transition-colors flex items-center justify-center cursor-pointer whitespace-nowrap after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-['']`
+const secondaryPillBtn = `${editorButton} relative h-7 px-2.5 rounded-xl bg-app-surface hover:bg-app-base border border-app-border hover:border-app-border/80 text-app-text font-medium text-xs transition-colors flex items-center justify-center cursor-pointer whitespace-nowrap after:absolute after:-inset-y-2 after:-inset-x-0.5 after:content-['']`
 
 const presets = [
   ['Action', '--custom-actionColor'], ['Accent', '--custom-control-accent'],
@@ -31,11 +32,14 @@ export function TagRow({ tag, onChange, children }: { tag: string; onChange?: (t
     else setError('Tag color was not saved. Resolve the storage conflict and retry.')
   }
   return <div>
-    <div className="flex items-center min-w-0">{children}
+    <div className="flex items-center min-w-0 max-sm:rounded-xl">{children}
       {onChange && <button type="button" aria-label={`Tag actions for ${tag}`} aria-expanded={open} className={rowActionBtn}
-        onClick={() => { if (open) close(); else { setName(tag); setHex(savedColor); setOpen(true) } }}>...</button>}
+        onClick={() => { if (open) close(); else { setName(tag); setHex(savedColor); setOpen(true) } }}>
+        <span className="max-sm:hidden">...</span>
+        <MoreHorizontal className="size-5 sm:hidden" aria-hidden="true" />
+      </button>}
     </div>
-    {open && <form aria-label={`Edit tag ${tag}`} className="my-1.5 space-y-1.5 pl-3.5 pr-1"
+    {open && <form aria-label={`Edit tag ${tag}`} className="my-1.5 space-y-1.5 pl-3.5 pr-1 max-sm:my-2 max-sm:space-y-2 max-sm:pl-2 max-sm:pr-0"
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
       onSubmit={event => {
         event.preventDefault()
@@ -48,31 +52,31 @@ export function TagRow({ tag, onChange, children }: { tag: string; onChange?: (t
         <Tag className="absolute left-2.5 w-3.5 h-3.5 text-app-muted pointer-events-none" />
         <input autoFocus aria-label="Tag name" placeholder="Tag name" className={`${searchBoxInput} pl-8`} value={name} onChange={event => setName(event.target.value)} />
       </div>
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex items-center gap-1.5 flex-wrap max-sm:gap-2 max-sm:grid max-sm:grid-cols-2">
         <button type="submit" className={primaryPillBtn}>Save</button>
         <button type="button" className={secondaryPillBtn} onClick={close}>Cancel</button>
         <button type="button" className={secondaryPillBtn} onClick={() => { setConfirmRemove(true); setError('') }}>Remove</button>
         {onColorChange && <button type="button" className={secondaryPillBtn} aria-expanded={showColors} onClick={() => setShowColors(!showColors)}>Color</button>}
       </div>
       {confirmRemove && (
-        <div role="alert" className="space-y-1.5 rounded-xl border border-status-error/30 bg-status-error/10 p-2 text-xs">
-          <p className="text-app-heading font-medium leading-relaxed">Remove #{tag} from every song? Songs will be kept.</p>
-          <div className="flex items-center gap-1.5 flex-nowrap">
-            <button type="button" className="relative h-7 px-2.5 rounded-xl bg-status-error hover:brightness-110 text-white font-medium text-xs transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']" onClick={() => { if (onChange?.(tag)) close(); else setError('Tag was not saved. Resolve the storage conflict and retry.') }}>Confirm remove tag</button>
+        <div role="alert" className="space-y-1.5 max-sm:space-y-2 rounded-xl max-sm:rounded-2xl border border-status-error/30 bg-status-error/10 p-2 text-xs">
+          <p className="text-app-heading font-medium leading-relaxed max-sm:wrap-anywhere">Remove #{tag} from every song? Songs will be kept.</p>
+          <div className="flex items-center gap-1.5 flex-nowrap max-sm:flex-wrap max-sm:gap-2">
+            <button type="button" className={`${editorButton} relative h-7 px-2.5 rounded-xl bg-status-error hover:brightness-110 text-white font-medium text-xs max-sm:whitespace-nowrap transition-colors flex items-center justify-center cursor-pointer after:absolute after:-inset-y-2 after:content-['']`} onClick={() => { if (onChange?.(tag)) close(); else setError('Tag was not saved. Resolve the storage conflict and retry.') }}>Confirm remove tag</button>
             <button type="button" className={secondaryPillBtn} onClick={() => setConfirmRemove(false)}>Keep tag</button>
           </div>
         </div>
       )}
       {showColors && (
-        <div role="group" aria-label={`Color for ${tag}`} className="space-y-1.5 pt-0.5">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <div className="flex items-center gap-1">
+        <div role="group" aria-label={`Color for ${tag}`} className="space-y-1.5 pt-0.5 max-sm:space-y-2 max-sm:pt-1">
+          <div className="flex items-center gap-1.5 flex-wrap max-sm:gap-2">
+            <div className="flex items-center gap-1 max-sm:flex-wrap">
               {presets.map(([label, token]) => (
                 <button
                   key={token}
                   type="button"
                   aria-label={`${label} tag color`}
-                  className="relative p-1 rounded-full hover:scale-110 transition-transform cursor-pointer after:absolute after:-inset-2 after:content-['']"
+                  className="relative p-1 rounded-full max-sm:flex max-sm:size-(--control-h) max-sm:items-center max-sm:justify-center max-sm:after:hidden hover:scale-110 transition-transform cursor-pointer after:absolute after:-inset-2 after:content-['']"
                   onClick={() => {
                     const color = window.getComputedStyle(document.documentElement).getPropertyValue(token).trim()
                     saveColor(color)

@@ -156,11 +156,11 @@ export function ExplorerNavigation({ isOpen, onClose, isHidden = false, ...nav }
       className="md:hidden fixed inset-0 z-50 flex" data-testid="music-explorer-drawer">
       <button type="button" tabIndex={-1} aria-label="Dismiss Music Explorer" onClick={onClose}
         className="fixed inset-0 bg-app-base/80" />
-      <div ref={drawer} className="relative z-10 flex h-full w-72 max-w-[80vw] flex-col border-r border-app-border bg-app-toolbar shadow-2xl">
-        <div className="flex-1 overflow-y-auto"><MusicExplorerNav {...drawerNav} headerAction={
+      <div ref={drawer} className="relative z-10 flex h-full w-72 max-w-[80vw] max-sm:w-[calc(100%-2rem)] max-sm:max-w-none flex-col border-r border-app-border bg-app-toolbar shadow-2xl">
+        <div className="flex-1 overflow-y-auto max-sm:min-h-0"><MusicExplorerNav {...drawerNav} headerAction={
           <button type="button" aria-label="Close Music Explorer" onClick={onClose}
-            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-app-muted hover:bg-app-surface">
-            <X className="h-4 w-4" />
+            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-app-muted hover:bg-app-surface max-sm:h-(--control-h)">
+            <X className="h-4 w-4 max-sm:size-5" />
           </button>
         } /></div>
       </div>

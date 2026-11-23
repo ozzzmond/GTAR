@@ -39,10 +39,11 @@ interface TagCount {
 }
 
 const itemBase =
-  'group flex w-full min-h-[42px] h-[42px] items-center gap-2 rounded-lg px-2.5 text-xs transition-colors cursor-pointer text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-app-action/60'
+  'group flex w-full min-h-[42px] h-[42px] items-center gap-2 rounded-xl sm:rounded-lg px-2.5 max-sm:px-2 text-xs max-sm:h-(--control-h) max-sm:min-h-(--control-h) transition-colors cursor-pointer text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-app-action/60'
 const itemIdle = 'text-app-text hover:bg-app-surface/60'
 const itemActive = 'bg-app-action text-app-on-action font-semibold shadow-sm'
-const pill = 'ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none'
+const pill = 'ml-auto shrink-0 rounded-full px-1.5 max-sm:px-2 py-0.5 max-sm:py-1 text-[10px] max-sm:text-xs leading-none'
+const mobileHeading = 'max-sm:min-h-(--control-h) max-sm:rounded-xl max-sm:text-xs max-sm:font-bold max-sm:uppercase max-sm:tracking-wider'
 const pillIdle = 'bg-app-surface border border-app-border text-app-muted'
 
 export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
@@ -103,14 +104,14 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
     onToggle: () => void,
     trailing?: React.ReactNode
   ) => (
-    <div className="mb-1 flex items-center justify-between px-1">
+    <div className="mb-1 flex items-center justify-between px-1 max-sm:px-0">
       <button
         type="button"
         aria-expanded={expanded}
         onClick={onToggle}
-        className="ui-section-text flex min-h-11 items-center gap-1 text-xs font-bold uppercase tracking-wider text-app-muted hover:text-app-heading cursor-pointer"
+        className={`ui-section-text flex min-h-11 shrink-0 items-center gap-1 text-xs font-bold uppercase tracking-wider text-app-muted hover:text-app-heading cursor-pointer ${mobileHeading}`}
       >
-        {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        {expanded ? <ChevronDown className="h-3.5 w-3.5 max-sm:size-4" /> : <ChevronRight className="h-3.5 w-3.5 max-sm:size-4" />}
         <span>{label}</span>
       </button>
       {trailing}
@@ -121,29 +122,23 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
     <nav
       aria-label="Music Explorer"
       data-testid="music-explorer-nav"
-      className="flex select-none flex-col px-3 py-2 text-xs text-app-text"
+      className="flex select-none flex-col px-3 max-sm:px-4 py-2 text-xs text-app-text [--control-h:--spacing(11)]"
     >
       {/* Songbook */}
       <section className="mb-5">
-        <div className="mb-1 flex items-center justify-between px-1">
-          <button
-            type="button"
-            aria-expanded={songbookExpanded}
-            onClick={() => setSongbookExpanded((value) => !value)}
-            className="ui-section-text flex min-h-11 shrink-0 items-center gap-1 text-xs font-bold uppercase tracking-wider text-app-muted hover:text-app-heading cursor-pointer"
-          >
-            {songbookExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            <span>Songbook</span>
-          </button>
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="min-w-0 truncate text-[10px] uppercase tracking-wider text-app-muted">
+        {sectionHeading(
+          'Songbook',
+          songbookExpanded,
+          () => setSongbookExpanded((value) => !value),
+          <div className="flex min-w-0 items-center gap-1.5 max-sm:gap-1">
+            <span className="min-w-0 truncate text-[10px] uppercase tracking-wider text-app-muted max-sm:text-xs max-sm:normal-case max-sm:tracking-normal">
               {songs.length} {songs.length === 1 ? 'master song' : 'master songs'}
             </span>
             {headerAction}
           </div>
-        </div>
+        )}
         {songbookExpanded && (
-          <div className="space-y-0.5 pl-1">
+          <div className="space-y-0.5 pl-1 max-sm:space-y-1 max-sm:pl-0">
             <button
               type="button"
               data-testid="explorer-nav-all-songs"
@@ -160,16 +155,20 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
                 type="button"
                 aria-expanded={tagsExpanded}
                 onClick={() => setTagsExpanded((value) => !value)}
-                className="flex min-h-11 w-full items-center gap-1 text-[11px] text-app-muted cursor-pointer"
+                className={`flex min-h-11 w-full items-center gap-1 text-[11px] text-app-muted cursor-pointer ${mobileHeading} max-sm:in-[.theme-custom]:[font-family:var(--custom-font-heading,var(--custom-font-ui,var(--font-stage-sans)))]`}
               >
-                {tagsExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                <Tag className="h-3.5 w-3.5 text-app-section" />
-                <span>Tags ({tagCounts.length})</span>
+                {tagsExpanded ? <ChevronDown className="h-3.5 w-3.5 max-sm:size-4" /> : <ChevronRight className="h-3.5 w-3.5 max-sm:size-4" />}
+                <Tag className="h-3.5 w-3.5 text-app-section max-sm:hidden" />
+                <span>
+                  Tags <span className="max-sm:sr-only">(</span>
+                  <span className="max-sm:rounded-full max-sm:border max-sm:border-current max-sm:px-2 max-sm:py-1 max-sm:leading-none">{tagCounts.length}</span>
+                  <span className="max-sm:sr-only">)</span>
+                </span>
               </button>
               {tagsExpanded && (
-                <div className="space-y-0.5 pl-3">
+                <div className="space-y-0.5 pl-3 max-sm:space-y-1 max-sm:pl-2">
                   {tagCounts.length === 0 ? (
-                    <p className="px-1 py-1 text-[11px] italic text-app-muted">No tags assigned yet</p>
+                    <p className="px-1 py-1 text-[11px] max-sm:text-xs italic text-app-muted">No tags assigned yet</p>
                   ) : (
                     tagCounts.map(({ tag, count }) => {
                       const target: ExplorerTarget = { type: 'TAG', tag }
@@ -182,8 +181,9 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
                           onClick={() => select(target)}
                           className={`${selectClass(target)} min-w-0 flex-1`}
                         >
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-app-section" aria-hidden="true" />
-                          <span className="truncate rounded-md px-1.5 py-0.5" style={tagChipStyle(colors, tag)}>#{tag}</span>
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-app-section max-sm:hidden" aria-hidden="true" />
+                          <Tag className="size-4 shrink-0 text-app-section sm:hidden" aria-hidden="true" />
+                          <span className="truncate rounded-xl sm:rounded-md px-1.5 py-0.5 max-sm:px-1 max-sm:py-1" style={tagChipStyle(colors, tag)}>#{tag}</span>
                           <span className={pillClass(target)}>{count}</span>
                         </button>
                         </TagRow>
@@ -205,7 +205,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
           () => setSetlistsExpanded((value) => !value)
         )}
         {setlistsExpanded && (
-          <div className="space-y-0.5 pl-1">
+          <div className="space-y-0.5 pl-1 max-sm:space-y-1 max-sm:pl-0">
             <button
               type="button"
               data-testid="explorer-nav-all-setlists"
@@ -230,10 +230,11 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
               <span>Unfiled Setlists</span>
               <span className={pillClass({ type: 'UNFILED_SETLISTS' })}>{unfiledSetlists.length}</span>
             </button>
-            <div className="explorer-song-drop-setlists space-y-0.5 pl-3" aria-label="Drop songs to add shortcuts">
+            <div className="explorer-song-drop-setlists space-y-0.5 pl-3 max-sm:space-y-1 max-sm:pl-2" aria-label="Drop songs to add shortcuts">
               {activeSetlists.map(sl => <div key={sl.id} data-explorer-drop-setlist={String(sl.id)}
                 data-testid={`explorer-drop-setlist-${sl.id}`} className={`${itemBase} ${itemIdle}`}>
                 <ListMusic className="h-4 w-4 shrink-0 text-app-section" /><span className="truncate">{sl.name}</span>
+                <span className={`${pill} ${pillIdle} sm:hidden`}>{sl.songs.length}</span>
               </div>)}
             </div>
             <ExplorerFolderTree folders={folders} setlists={setlists} selectedId={currentSelection.type === 'FOLDER' ? currentSelection.folderId : undefined}
@@ -241,7 +242,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
           </div>
         )}
         {/* #359: Trash Bin at end of Setlists & Folders section */}
-        <div className="mt-2 pl-1">
+        <div className="mt-2 pl-1 max-sm:pl-0">
           <button
             type="button"
             data-testid="explorer-nav-trash"
@@ -253,11 +254,9 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
           >
             <Trash2 className="h-4 w-4 shrink-0 text-current" />
             <span>Trash Bin</span>
-            {deletedSongsCount > 0 && (
-              <span className={`${pill} ${isTrashActive ? 'bg-app-action/80 text-app-on-action' : pillIdle}`}>
-                {deletedSongsCount}
-              </span>
-            )}
+            <span className={`${pill} ${isTrashActive ? 'bg-app-action/80 text-app-on-action' : pillIdle} ${deletedSongsCount > 0 ? '' : 'sm:hidden'}`}>
+              {deletedSongsCount}
+            </span>
           </button>
         </div>
       </section>
