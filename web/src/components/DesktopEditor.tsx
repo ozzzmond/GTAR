@@ -979,16 +979,16 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
       )}
 
       {/* Editor navigation and save status */}
-      <div className="border-b border-app-border bg-app-surface px-3 py-1.5 sm:px-4 sm:py-2 flex items-center justify-between gap-2 sm:gap-3 select-none shrink-0 shadow-sm">
+      <div className="border-b border-app-border bg-app-surface px-4 py-1.5 sm:py-2 flex items-center justify-between gap-2 sm:gap-3 select-none shrink-0 shadow-sm">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {onClose && (
             <button
               type="button"
               onClick={() => requestNavigation(onClose)}
-              className="ui-button h-9 min-h-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+              className="ui-button min-h-11 sm:h-9 sm:min-h-9 max-sm:min-w-11 px-2.5 rounded-xl sm:rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
               aria-label="Return to Stage View"
             >
-              <ArrowLeft className="w-4 h-4 shrink-0" />
+              <ArrowLeft className="w-5 h-5 sm:w-4 sm:h-4 shrink-0" />
               <span className="hidden sm:inline">Back</span>
             </button>
           )}
