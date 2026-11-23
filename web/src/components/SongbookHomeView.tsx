@@ -1051,7 +1051,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             </React.Fragment>
           ))}
           {searchQuery && isSongsContext && (
-            <span data-testid="songbook-search-filter" className="ml-1 shrink-0 px-2 py-0.5 rounded-full bg-app-surface border border-app-border text-app-accent text-[11px] flex items-center gap-1">
+            <span data-testid="songbook-search-filter" className="ml-1 shrink-0 px-2 py-0.5 rounded-full bg-app-surface border border-app-border text-app-accent text-xs sm:text-[11px] flex items-center gap-1">
               <span>Filter: &quot;{searchQuery}&quot;</span>
               <button type="button" onClick={() => handleSearchChange('')} aria-label="Clear active filter"
                 className="min-h-6 min-w-6 flex items-center justify-center hover:text-app-heading cursor-pointer">
@@ -1064,13 +1064,13 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         {isSongsContext && (
           <div data-testid="songs-library-toolbar" className="contents sm:flex sm:items-center sm:gap-1.5 sm:ml-auto sm:flex-wrap sm:justify-end">
             {songs.length > 0 && (
-              <div data-testid="songs-library-filters" className="col-start-1 row-start-2 flex flex-wrap items-center gap-1.5 min-w-0 sm:ml-auto sm:flex-nowrap">
+              <div data-testid="songs-library-filters" className="col-start-1 row-start-2 grid grid-cols-2 items-center gap-2 min-w-0 sm:ml-auto sm:flex sm:flex-nowrap sm:gap-1.5">
                 <select
                   data-testid="filter-metadata-select"
                   aria-label="Filter songs by metadata"
                   value={filterMetadata}
                   onChange={(e) => handleFilterMetadataChange(e.target.value as MetadataFilterOption)}
-                  className="min-h-11 sm:min-h-9 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-lg px-2.5 outline-none cursor-pointer"
+                  className="h-11 min-h-11 sm:h-auto sm:min-h-9 min-w-0 w-full sm:w-auto sm:flex-none bg-app-surface border border-app-border text-app-text text-xs rounded-xl sm:rounded-lg px-2 sm:px-2.5 truncate outline-none cursor-pointer"
                 >
                   <option value="ALL">All Metadata</option>
                   <option value="METADATA_OK">Metadata OK</option>
@@ -1082,7 +1082,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     aria-label="Filter songs by setlist"
                     value={filterSetlistId}
                     onChange={(e) => handleFilterSetlistChange(e.target.value)}
-                    className="min-h-11 sm:min-h-9 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-lg px-2.5 outline-none cursor-pointer"
+                    className="h-11 min-h-11 sm:h-auto sm:min-h-9 min-w-0 w-full sm:w-auto sm:flex-none bg-app-surface border border-app-border text-app-text text-xs rounded-xl sm:rounded-lg px-2 sm:px-2.5 truncate outline-none cursor-pointer"
                   >
                     <option value="ALL">All Setlists</option>
                     {activeSetlists.map((sl) => (
@@ -1097,17 +1097,17 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                   aria-label="Filter songs by tags"
                   value={filterTags}
                   onChange={(e) => handleFilterTagsChange(e.target.value as TagsFilterOption)}
-                  className="min-h-11 sm:min-h-9 min-w-[4.5rem] flex-1 sm:flex-none sm:w-auto bg-app-surface border border-app-border text-app-text text-xs rounded-lg px-2.5 outline-none cursor-pointer"
+                  className="h-11 min-h-11 sm:h-auto sm:min-h-9 min-w-0 w-full sm:w-auto sm:flex-none bg-app-surface border border-app-border text-app-text text-xs rounded-xl sm:rounded-lg px-2 sm:px-2.5 truncate outline-none cursor-pointer"
                 >
                   <option value="ALL">All Tags</option>
                   <option value="TAGGED">Tagged</option>
                   <option value="NO_TAG">No tag</option>
                 </select>
-                <div role="group" aria-label="Sort songs" className="shrink-0 flex items-center bg-app-surface border border-app-border rounded-lg text-xs w-fit">
+                <div role="group" aria-label="Sort songs" className={`${activeSetlists.length === 0 ? 'col-span-2 sm:col-span-1' : ''} h-11 sm:h-auto min-w-0 flex items-center bg-app-surface border border-app-border rounded-xl sm:rounded-lg text-xs w-full sm:w-fit sm:shrink-0`}>
                   {(['title', 'artist', 'date'] as const).map((field) => (
                     <button key={field} type="button" data-testid={`sort-${field}`} aria-pressed={sortBy === field}
                       onClick={() => handleSortChange(field)}
-                      className={`min-h-11 sm:min-h-9 px-2.5 rounded-lg font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                      className={`h-11 sm:h-auto flex-1 sm:flex-none min-w-0 min-h-11 sm:min-h-9 px-1 sm:px-2.5 rounded-xl sm:rounded-lg font-medium whitespace-nowrap transition-colors cursor-pointer ${
                         sortBy === field ? 'bg-app-action text-app-on-action' : 'text-app-muted hover:text-app-text'}`}>
                       {field === 'title' ? 'Title' : field === 'artist' ? 'Artist' : 'Date'}{sortBy === field && (sortDirection === 'asc' ? ' ↑' : ' ↓')}
                     </button>
@@ -1118,7 +1118,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             {songs.length > 0 && (
                 <button type="button" data-testid="toggle-song-selection-mode" aria-pressed={isSongSelectionMode}
                   onClick={() => { setIsSongSelectionMode(!isSongSelectionMode); setSelectedSongIds(new Set()) }}
-                  className={`col-start-2 row-start-1 justify-self-end shrink-0 min-h-11 sm:min-h-9 px-2.5 rounded-lg text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  className={`col-start-2 row-start-1 justify-self-end shrink-0 h-11 sm:h-auto min-h-11 sm:min-h-9 px-2.5 rounded-xl sm:rounded-lg text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer ${
                     isSongSelectionMode ? 'bg-app-action/15 border-app-action text-app-action' : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'}`}>
                   {isSongSelectionMode ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
                   <span>Select</span>
@@ -1130,7 +1130,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               aria-label={isWorkspaceOpen ? "Hide Preview Pane" : "Show Preview Pane"}
               aria-pressed={isWorkspaceOpen}
               onClick={handleToggleWorkspace}
-              className={`hidden md:flex items-center gap-1.5 shrink-0 min-h-11 sm:min-h-9 px-2.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+              className={`hidden md:flex items-center gap-1.5 shrink-0 min-h-11 sm:min-h-9 px-2.5 rounded-xl sm:rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
                 isWorkspaceOpen
                   ? 'bg-app-action/15 border-app-action text-app-action'
                   : 'ui-button bg-app-button border-app-border text-app-button-text hover:brightness-110'
@@ -1153,7 +1153,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                     closeAllMenus()
                     setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
                   }}
-                  className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 rounded-lg border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                  className="ui-button h-11 sm:h-auto min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 rounded-xl sm:rounded-lg border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0"
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
@@ -1284,14 +1284,14 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
         <div className="flex items-center justify-between gap-2">
           <h2 className="ui-primary-text text-base font-bold text-app-heading flex items-center gap-2 min-w-0">
             <Music className="ui-section-icon w-4 h-4 text-app-section shrink-0" />
-            <span className="truncate">{currentView.type === 'TAG' ? `Songs tagged #${currentView.tag}` : 'All Songs'}</span>
+            <span className="hidden sm:inline truncate">{currentView.type === 'TAG' ? `Songs tagged #${currentView.tag}` : 'All Songs'}</span>
             <span data-testid="songs-library-count" className="shrink-0 text-xs font-normal text-app-muted">
               ({sortedIndexedSongs.length} {sortedIndexedSongs.length === 1 ? 'song' : 'songs'})
             </span>
           </h2>
           <div className="flex items-center gap-1.5 shrink-0">
             <button type="button" data-testid="songs-add-song" onClick={onNewSong}
-              className="min-h-[42px] h-[42px] px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
+              className="min-h-11 h-11 sm:min-h-[42px] sm:h-[42px] px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
               <span>Add Song</span>
             </button>
           </div>
@@ -1304,7 +1304,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             <p className="text-xs text-app-muted max-w-sm mx-auto mt-1 mb-4">Create a song or import charts.</p>
             <div className="flex justify-center gap-2 flex-wrap">
               <button type="button" onClick={onNewSong}
-                className="min-h-[42px] h-[42px] px-3.5 bg-app-action hover:brightness-110 rounded-xl text-xs text-app-on-action font-semibold flex items-center gap-1 shadow-sm cursor-pointer">
+                className="min-h-11 h-11 sm:min-h-[42px] sm:h-[42px] px-3.5 bg-app-action hover:brightness-110 rounded-xl text-xs text-app-on-action font-semibold flex items-center gap-1 shadow-sm cursor-pointer">
                 <Plus className="w-3.5 h-3.5" />
                 <span>Create First Song</span>
               </button>
@@ -1323,7 +1323,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 handleFilterTagsChange('ALL')
                 if (currentView.type === 'TAG') onSelectView?.({ type: 'ALL_SONGS' })
               }}
-              className="ui-button min-h-[42px] h-[42px] px-3 bg-app-button hover:brightness-110 rounded-xl text-xs text-app-button-text font-semibold border border-app-border cursor-pointer">
+              className="ui-button min-h-11 h-11 sm:min-h-[42px] sm:h-[42px] px-3 bg-app-button hover:brightness-110 rounded-xl text-xs text-app-button-text font-semibold border border-app-border cursor-pointer">
               Reset Filters
             </button>
           </div>
@@ -1410,12 +1410,12 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       <div className="flex items-start gap-2.5 min-w-0 flex-1">
                         {isSongSelectionMode ? (
                           <div data-testid={`select-song-${originalIdx}`} aria-hidden="true"
-                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 border ${
+                            className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 mt-0.5 border ${
                               isSongChosen ? 'ui-selection-indicator bg-app-action border-app-action text-app-on-action' : 'bg-app-base border-app-border text-app-muted'}`}>
                             {isSongChosen ? <Check className="w-4 h-4 stroke-[3]" /> : <Square className="w-3.5 h-3.5" />}
                           </div>
                         ) : (
-                          <div className="w-7 h-7 rounded-lg bg-app-action/15 text-app-action flex items-center justify-center shrink-0 mt-0.5">
+                          <div className="w-7 h-7 rounded-xl bg-app-action/15 text-app-action flex items-center justify-center shrink-0 mt-0.5">
                             <Music className="w-3.5 h-3.5" />
                           </div>
                         )}
@@ -1499,7 +1499,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                               setActiveMenuSongIdx(isMenuOpen ? null : originalIdx)
                               setSongMenuAnchor(isMenuOpen ? null : e.currentTarget)
                             }}
-                            className="min-h-11 min-w-11 rounded-lg text-app-muted hover:text-app-heading hover:bg-app-base flex items-center justify-center transition-colors cursor-pointer"
+                            className="min-h-11 min-w-11 rounded-xl text-app-muted hover:text-app-heading hover:bg-app-base flex items-center justify-center transition-colors cursor-pointer"
                           >
                             <MoreVertical className="w-4 h-4" />
                           </button>
@@ -1559,7 +1559,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         {origKey && (
                           <span
                             data-testid={`meta-orig-key-${originalIdx}`}
-                            className="px-2 py-0.5 rounded-full bg-app-base/80 border border-app-border text-[10px] sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
+                            className="h-7 sm:h-auto px-2 sm:py-0.5 rounded-full bg-app-base/80 border border-app-border text-xs sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
                             aria-label={`Orig Key: ${origKey}`}
                           >
                             <span className="text-app-muted font-normal">Orig Key:</span>
@@ -1569,7 +1569,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         {chartKey && (
                           <span
                             data-testid={`meta-chart-key-${originalIdx}`}
-                            className="px-2 py-0.5 rounded-full bg-app-base/80 border border-app-border text-[10px] sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
+                            className="h-7 sm:h-auto px-2 sm:py-0.5 rounded-full bg-app-base/80 border border-app-border text-xs sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
                             aria-label={`Chart Key: ${chartKey}`}
                           >
                             <span className="text-app-muted font-normal">Chart Key:</span>
@@ -1579,7 +1579,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         {songBpm && (
                           <span
                             data-testid={`meta-tempo-${originalIdx}`}
-                            className="px-2 py-0.5 rounded-full bg-app-base/80 border border-app-border text-[10px] sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
+                            className="h-7 sm:h-auto px-2 sm:py-0.5 rounded-full bg-app-base/80 border border-app-border text-xs sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
                             aria-label={`Tempo: ${songBpm}`}
                           >
                             <span className="text-app-muted font-normal">Tempo:</span>
@@ -1589,7 +1589,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         {songTime && (
                           <span
                             data-testid={`meta-time-${originalIdx}`}
-                            className="px-2 py-0.5 rounded-full bg-app-base/80 border border-app-border text-[10px] sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
+                            className="h-7 sm:h-auto px-2 sm:py-0.5 rounded-full bg-app-base/80 border border-app-border text-xs sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
                             aria-label={`Time: ${songTime}`}
                           >
                             <span className="text-app-muted font-normal">Time:</span>
@@ -1599,7 +1599,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                         {songYear && (
                           <span
                             data-testid={`meta-year-${originalIdx}`}
-                            className="px-2 py-0.5 rounded-full bg-app-base/80 border border-app-border text-[10px] sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
+                            className="h-7 sm:h-auto px-2 sm:py-0.5 rounded-full bg-app-base/80 border border-app-border text-xs sm:text-[11px] font-mono flex items-center gap-1 shrink-0"
                             aria-label={`Year: ${songYear}`}
                           >
                             <span className="text-app-muted font-normal">Year:</span>
@@ -1619,11 +1619,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                             <button key={t} type="button" data-testid={`song-tag-${originalIdx}-${t}`}
                               style={tagChipStyle(tagColors, t)}
                               onClick={(e) => { e.stopPropagation(); onSelectView?.({ type: 'TAG', tag: t }) }}
-                              className="relative px-1.5 py-0.5 rounded-md bg-app-section/15 text-app-section border border-app-section/40 text-[10px] font-medium hover:border-app-section transition-colors cursor-pointer after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']">
+                              className="relative inline-flex items-center h-7 sm:h-auto px-2 sm:px-1.5 sm:py-0.5 rounded-full sm:rounded-md bg-app-section/15 text-app-section border border-app-section/40 text-xs sm:text-[10px] font-medium hover:border-app-section transition-colors cursor-pointer after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']">
                               #{t}
                             </button>
                           ))}
-                          {tags.length > 3 && <span className="text-[10px] text-app-muted font-mono">+{tags.length - 3}</span>}
+                          {tags.length > 3 && <span className="text-xs sm:text-[10px] text-app-muted font-mono">+{tags.length - 3}</span>}
                         </div>
                       )}
                       <SongStatusBadge
@@ -1718,7 +1718,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                                 }, 180)
                               }
                             }}
-                            className="relative inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-app-accent/15 text-app-accent hover:bg-app-accent/25 border border-app-accent/30 text-[10px] font-mono font-bold shrink-0 transition-colors cursor-pointer after:absolute after:-inset-3 after:content-['']"
+                            className="relative inline-flex items-center gap-1 h-7 sm:h-auto px-2 sm:px-1.5 sm:py-0.5 rounded-full sm:rounded bg-app-accent/15 text-app-accent hover:bg-app-accent/25 border border-app-accent/30 text-xs sm:text-[10px] font-mono font-bold shrink-0 transition-colors cursor-pointer after:absolute after:-inset-3 after:content-['']"
                           >
                             <ListMusic className="ui-section-icon w-2.5 h-2.5" />
                             <span data-testid={`song-setlist-count-${originalIdx}`}>{songSetlists.length}</span>
@@ -1790,11 +1790,11 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0 ml-auto">
                       {!isSongSelectionMode && (
                         <button type="button" data-testid={`song-stage-${originalIdx}`} aria-label={`Play ${song.title || 'song'} in Stage`}
                           onClick={(e) => { e.stopPropagation(); onSelectSong(originalIdx) }}
-                          className="relative px-2 py-0.5 rounded-md bg-app-action hover:brightness-110 text-app-on-action font-semibold text-[11px] transition-colors flex items-center gap-1 cursor-pointer after:absolute after:-inset-y-3 after:-inset-x-1 after:content-['']">
+                          className="relative min-h-11 min-w-[5rem] justify-center sm:min-h-0 sm:min-w-0 px-3 sm:px-2 sm:py-0.5 rounded-xl sm:rounded-md bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs sm:text-[11px] transition-colors flex items-center gap-1 cursor-pointer after:absolute after:-inset-y-3 after:-inset-x-1 after:content-['']">
                           <Play className="w-2.5 h-2.5 fill-current" />
                           <span>Stage</span>
                         </button>
@@ -1813,7 +1813,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {date ? <span className="text-[10px] text-app-muted">{new Date(date).toLocaleDateString()}</span> : null}
+                      <span className="order-first sm:order-last min-w-[5.5rem] sm:min-w-0 text-right text-xs sm:text-[10px] text-app-muted">{date ? new Date(date).toLocaleDateString() : null}</span>
                     </div>
                   </div>
 
