@@ -53,9 +53,9 @@ export const TrashView: React.FC<TrashViewProps> = ({
           type="button"
           onClick={onBackToSongbook}
           aria-label="Back"
-          className="ui-button min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+          className="ui-button min-h-11 min-w-11 sm:min-h-[44px] sm:min-w-[44px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
         >
-          <ArrowLeft className="w-4 h-4 shrink-0" />
+          <ArrowLeft className="w-5 h-5 sm:w-4 sm:h-4 shrink-0" />
           <span className="hidden sm:inline">Back</span>
         </button>
         <div className="text-xs font-mono text-app-muted">

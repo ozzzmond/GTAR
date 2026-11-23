@@ -192,8 +192,8 @@ test('4_CONTROL_HEIGHT: Add Song is 44px and rounded-xl on mobile, breadcrumb st
   const editorSource = read('components/DesktopEditor.tsx')
   assert.match(
     editorSource,
-    /className="ui-button h-9 min-h-9 px-2\.5 rounded-lg border text-xs font-semibold/,
-    'Editor back button uses compact 36px styling'
+    /className="ui-button min-h-11 sm:h-9 sm:min-h-9 max-sm:min-w-11 px-2\.5 rounded-xl sm:rounded-lg border text-xs font-semibold[^"]*"\s+aria-label="Return to Stage View"\s*>\s*<ArrowLeft className="w-5 h-5 sm:w-4 sm:h-4 shrink-0"/,
+    'Editor Back uses a 44px minimum target and 20px icon on mobile, retaining its compact styling from sm'
   )
   assert.match(
     editorSource,
