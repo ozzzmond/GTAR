@@ -629,7 +629,7 @@ export const Header: React.FC<HeaderProps> = ({
       data-testid={inline ? 'dev-header-diagnostics' : 'dev-header-diagnostics-compact'}
       className={inline
         ? 'hidden sm:flex flex-col justify-center border-l border-app-border/40 pl-2 sm:pl-3 text-[9px] sm:text-[10px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none min-w-0 max-w-[35vw]'
-        : 'sm:hidden pt-1 text-center text-[9px] font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none truncate w-full'}
+        : 'sm:hidden pt-1 text-center text-xs font-mono leading-tight header-primary-text text-app-heading tracking-tight select-none truncate w-full'}
     >
       <span data-testid={inline ? 'dev-header-diag-line1' : undefined} className={inline ? 'truncate whitespace-nowrap' : ''}>
         {formatDevDiagLine1(GTAR_DEV_PROVENANCE, GTAR_DEV_VERSION)}
@@ -651,12 +651,12 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex shrink-0 items-center gap-1 sm:gap-3 min-w-0">
           <button type="button" aria-label="Open Music Explorer" aria-expanded={isExplorerOpen}
             onClick={onOpenSetlistDrawer}
-            className="md:hidden relative flex w-9 h-9 items-center justify-center rounded-xl header-neutral-icon text-app-text hover:text-app-heading hover:bg-app-base transition-colors shrink-0 before:absolute before:-inset-1 before:content-['']">
+            className="md:hidden relative flex w-11 h-11 sm:w-9 sm:h-9 items-center justify-center rounded-xl header-neutral-icon text-app-text hover:text-app-heading hover:bg-app-base transition-colors shrink-0 before:absolute before:-inset-1 before:content-['']">
             {isExplorerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <button type="button" onClick={onNavigateHome} aria-label="GTAR home"
-            className="flex sm:flex-row flex-col items-center sm:gap-2 gap-0 text-center sm:text-left group min-h-9 cursor-pointer shrink-0">
-            <div className="w-10 h-10 rounded-xl border border-app-border bg-app-base overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-all">
+            className="flex sm:flex-row flex-col items-center sm:gap-2 gap-0 text-center sm:text-left group min-h-11 sm:min-h-9 cursor-pointer shrink-0">
+            <div className="w-11 h-11 sm:w-10 sm:h-10 rounded-xl border border-app-border bg-app-base overflow-hidden flex items-center justify-center shadow-sm shrink-0 group-hover:opacity-90 transition-all">
               <img src={mascotSrc} alt="GTAR Logo"
                 className="w-full h-full object-contain p-0 select-none scale-110" />
             </div>
@@ -696,11 +696,11 @@ export const Header: React.FC<HeaderProps> = ({
                 onFocus={() => setIsSearchFocused(true)}
                 onChange={(e) => { onSearchQueryChange(e.target.value); setIsSearchFocused(true) }}
                 placeholder="Search songs & setlists... (Esc to clear)"
-                className="header-search-input min-h-[36px] min-w-0 w-full py-1.5 pr-2 border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted focus:outline-none focus:ring-0 shadow-none" />
+                className="header-search-input min-h-11 sm:min-h-[36px] min-w-0 w-full py-1.5 pr-2 border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted focus:outline-none focus:ring-0 shadow-none" />
               {searchQuery && (
                 <button type="button" aria-label="Clear search"
                   onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus({ preventScroll: true }) }}
-                  className="min-h-9 min-w-9 mr-0.5 flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading transition-colors shrink-0">
+                  className="min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 mr-0.5 flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading transition-colors shrink-0">
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
@@ -720,7 +720,7 @@ export const Header: React.FC<HeaderProps> = ({
           {compact && (
             <button ref={searchTriggerRef} type="button" aria-label="Open search"
               onClick={() => setMobileSearchOpen(true)}
-              className={`ui-button mobile-search-trigger relative flex w-9 h-9 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action transition-colors active:scale-95 cursor-pointer before:absolute before:-inset-1 before:content-[''] ${
+              className={`ui-button mobile-search-trigger relative flex w-11 h-11 sm:w-9 sm:h-9 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action transition-colors active:scale-95 cursor-pointer before:absolute before:-inset-1 before:content-[''] ${
                 searchQuery ? 'text-app-accent border-app-accent' : ''}`}>
               <Search className="w-5 h-5" />
             </button>
@@ -738,7 +738,7 @@ export const Header: React.FC<HeaderProps> = ({
             onFocus={() => setIsModeFocused(true)}
             onBlur={() => setIsModeFocused(false)}
             style={modeButtonStyle}
-            className="relative flex w-9 h-9 shrink-0 items-center justify-center rounded-xl border cursor-pointer transition-colors active:scale-95 before:absolute before:-inset-1 before:content-['']"
+            className="relative flex w-11 h-11 sm:w-9 sm:h-9 shrink-0 items-center justify-center rounded-xl border cursor-pointer transition-colors active:scale-95 before:absolute before:-inset-1 before:content-['']"
           >
             {targetRole === 'dark' ? (
               <Moon className="w-5 h-5 shrink-0" aria-hidden="true" style={{ color: destIconColor }} />
@@ -749,7 +749,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {deferredInstallPrompt && !isAppInstalled && !compact && (
             <button type="button" onClick={handleTriggerInstall} aria-label="Install GTAR App to Home Screen"
-              className="relative flex w-9 h-9 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action transition-colors cursor-pointer before:absolute before:-inset-1 before:content-['']">
+              className="relative flex w-11 h-11 sm:w-9 sm:h-9 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-base text-app-action hover:border-app-action transition-colors cursor-pointer before:absolute before:-inset-1 before:content-['']">
               <Download className="w-5 h-5 header-neutral-icon text-app-action" />
             </button>
           )}
@@ -764,7 +764,7 @@ export const Header: React.FC<HeaderProps> = ({
               aria-expanded={showAdvancedToolsMenu}
               data-testid="header-advanced-tools"
               onClick={() => { if (!showAdvancedToolsMenu) placeAdvancedToolsMenu(); setShowAdvancedToolsMenu(!showAdvancedToolsMenu) }}
-              className="relative w-9 h-9 shrink-0 rounded-xl border border-app-border bg-app-base hover:border-app-action flex items-center justify-center cursor-pointer transition-colors active:scale-95 before:absolute before:-inset-1 before:content-['']"
+              className="relative w-11 h-11 sm:w-9 sm:h-9 shrink-0 rounded-xl border border-app-border bg-app-base hover:border-app-action flex items-center justify-center cursor-pointer transition-colors active:scale-95 before:absolute before:-inset-1 before:content-['']"
             >
               <Wrench className="w-5 h-5 text-app-action header-neutral-icon" aria-hidden="true" />
             </button>
@@ -782,7 +782,7 @@ export const Header: React.FC<HeaderProps> = ({
               aria-expanded={showSettingsMenu}
               data-testid="header-settings"
               onClick={() => setShowSettingsMenu(!showSettingsMenu)}
-              className="relative w-9 h-9 shrink-0 rounded-xl border border-app-border bg-app-base hover:border-app-action flex items-center justify-center cursor-pointer transition-colors active:scale-95 before:absolute before:-inset-1 before:content-['']"
+              className="relative w-11 h-11 sm:w-9 sm:h-9 shrink-0 rounded-xl border border-app-border bg-app-base hover:border-app-action flex items-center justify-center cursor-pointer transition-colors active:scale-95 before:absolute before:-inset-1 before:content-['']"
             >
               <Settings className="w-5 h-5 text-app-action header-neutral-icon" aria-hidden="true" />
             </button>
@@ -894,7 +894,7 @@ export const Header: React.FC<HeaderProps> = ({
       ) : GTAR_PREVIEW_IDENTITY ? (
         <div
           data-testid="header-prod-version-compact"
-          className="sm:hidden pt-1 text-center text-[9px] font-mono leading-tight header-secondary-text text-app-muted tracking-tight select-none truncate w-full"
+          className="sm:hidden pt-1 text-center text-xs font-mono leading-tight header-secondary-text text-app-muted tracking-tight select-none truncate w-full"
         >
           {formatPreviewIdentity(GTAR_PREVIEW_IDENTITY)}
         </div>
@@ -904,7 +904,7 @@ export const Header: React.FC<HeaderProps> = ({
       {compact && mobileSearchOpen && (
         <div ref={(node) => { searchContainerRef.current = node }} role="search" aria-label="Mobile expanded song search"
           className="mobile-search-overlay absolute inset-0 z-50 flex items-center gap-2 px-3 bg-app-header border-b border-app-border animate-scale-in">
-          <div className="header-search-box flex-1 relative flex items-center min-w-0 rounded-xl bg-app-surface border border-app-accent ring-2 ring-app-accent/20 px-3">
+          <div className="header-search-box flex-1 relative flex h-11 items-center min-w-0 rounded-xl bg-app-surface border border-app-accent ring-2 ring-app-accent/20 px-3">
             <Search className="w-4 h-4 text-app-accent mr-2 shrink-0 pointer-events-none" />
             <input id="search-input" ref={searchInputRef} type="text" maxLength={200}
               aria-label="Search songs, artists and setlists" aria-controls="global-search-results"
@@ -912,11 +912,11 @@ export const Header: React.FC<HeaderProps> = ({
               onFocus={() => setIsSearchFocused(true)}
               onChange={(e) => { onSearchQueryChange(e.target.value); setIsSearchFocused(true) }}
               placeholder="Search songs & setlists..."
-              className="header-search-input min-h-11 w-full border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted font-medium focus:outline-none focus:ring-0 shadow-none" />
+              className="header-search-input h-full min-h-0 w-full border-0 bg-transparent text-xs text-app-text placeholder:text-app-muted font-medium focus:outline-none focus:ring-0 shadow-none" />
             {searchQuery && (
               <button type="button" aria-label="Clear search"
                 onClick={() => { onSearchQueryChange(''); searchInputRef.current?.focus({ preventScroll: true }) }}
-                className="min-h-9 min-w-9 flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading transition-colors shrink-0">
+                className="min-h-11 min-w-11 flex items-center justify-center header-neutral-icon text-app-muted hover:text-app-heading transition-colors shrink-0">
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
