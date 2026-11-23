@@ -339,7 +339,9 @@ test('"+ Add" wording is normalized to "Add" across rendered labels', () => {
     assert.doesNotMatch(source, /[>'"`]\s*\+\s?Add\b/, `${file}: no "+ Add" label`)
     assert.doesNotMatch(source, /<Plus\b[^>]*\/>\s*(?:<span>)?\s*Add\b/, `${file}: no plus icon in front of an Add label`)
   }
-  assert.match(read('components/SongbookHomeView.tsx'), /data-testid="songs-add-song"[\s\S]{0,260}<span>Add Song<\/span>/)
+  const addSongButton = read('components/SongbookHomeView.tsx').match(/<button\b[^>]*data-testid="songs-add-song"[^>]*>[\s\S]*?<\/button>/)
+  assert.ok(addSongButton, 'Add Song button exists')
+  assert.match(addSongButton[0], /<span>Add Song<\/span>/, 'Add Song label is inside the Add Song button')
   assert.match(read('components/SetlistWorkspace.tsx'), /aria-label="Add new setlist"[\s\S]{0,320}<span>Add new setlist<\/span>/)
   assert.match(read('components/WebsiteUrlSourceModal.tsx'), /<span>Add Custom Website URL<\/span>/)
   assert.match(read('components/MultiSongSetlistPicker.tsx'), /'Add Selected to Setlist'/)

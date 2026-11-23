@@ -131,12 +131,12 @@ test('3_STICKY_HEADERS: Music Explorer and second-row headers are sticky with z-
   assert.match(headerSource, /--app-header-height/, 'Header updates --app-header-height dynamically')
 })
 
-test('4_CONTROL_HEIGHT: Applicable layout controls standardized to 42px', () => {
+test('4_CONTROL_HEIGHT: Add Song is 44px and rounded-xl on mobile, breadcrumb stays 42px', () => {
   const songbookSource = read('components/SongbookHomeView.tsx')
   assert.match(
     songbookSource,
-    /data-testid="songs-add-song"[\s\S]*?min-h-\[42px\] h-\[42px\]/,
-    'Add Song button standardized to 42px'
+    /data-testid="songs-add-song"[\s\S]{0,300}?className="[^"]*\bmin-h-11 h-11\b[^"]*\brounded-xl\b/,
+    'Add Song button is 44px (min-h-11 h-11) and rounded-xl'
   )
   assert.match(
     songbookSource,

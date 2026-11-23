@@ -224,8 +224,16 @@ test('GH436_CHECKLIST_04: Song card metadata row displays verified uniform pills
   assert.ok(songHtml.includes('data-testid="meta-year-0"'), 'Song 1 has year pill')
   assert.ok(songHtml.includes('Year:</span><span class="text-app-heading font-bold">1779</span>'), 'Song 1 displays Year: 1779')
 
-  // Uniform pill style: rounded-full, border, font-mono
-  assert.ok(songHtml.includes('rounded-full bg-app-base/80 border border-app-border text-[10px] sm:text-[11px] font-mono'), 'Pills have uniform rounded-full style')
+  // Uniform pill style: rounded-full, 28px tall (h-7), 12px text (text-xs), border, font-mono
+  for (const id of ['orig-key', 'chart-key', 'tempo', 'time', 'year']) {
+    const pill = songHtml.match(new RegExp(`<span[^>]*data-testid="meta-${id}-0"[^>]*>`))
+    assert.ok(pill, `${id} pill rendered`)
+    const classes = (pill[0].match(/class="([^"]*)"/) || [])[1].split(/\s+/)
+    for (const token of ['rounded-full', 'h-7', 'text-xs', 'font-mono', 'border']) {
+      assert.ok(classes.includes(token), `${id} pill is uniform: ${token}`)
+    }
+    assert.equal(classes.some((c) => /^text-\[(9|10|11)px\]$/.test(c)), false, `${id} pill has no hardcoded sub-12px text on mobile`)
+  }
 
   // Replaces old amber Orig/Chart chips
   assert.equal(songHtml.includes('>Orig E<'), false, 'Old amber Orig chip removed')
