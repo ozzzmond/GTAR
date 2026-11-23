@@ -7,20 +7,19 @@ Desktop layout from `sm:` up is out of scope. Keep existing theme color tokens.
 
 - Controls (buttons, dropdowns, search, segmented controls, drawer rows) are 44px tall with a 44px minimum (`min-h-11`) and `rounded-xl` (12px).
 - Containers (song cards, sheets, modals, panels) use `rounded-2xl` (16px).
+- Small icon tiles inside cards, such as the song icon tile, use `rounded-xl`.
 - Chips, badges, count pills, and round icon buttons use `rounded-full`. Chips are 28px tall.
-- Use 4, 8, 12, or 16px spacing (`gap-1`, `gap-2`, `gap-3`, `gap-4`). Skip half-steps such as `1.5`, `2.5`, and `3.5`.
+- Use 4, 8, 12, or 16px spacing (`gap-1`, `gap-2`, `gap-3`, `gap-4`). Do not use half-steps such as `1.5`, `2.5`, and `3.5`.
 - Use a 16px page gutter, 12px card padding, and a 12px gap between cards.
-- Use 12, 14, 16, or 20px text. The minimum is 12px. Avoid hardcoded `text-[9px]`, `text-[10px]`, and `text-[11px]`.
+- Use 12, 14, 16, or 20px text. The minimum is 12px. Do not use hardcoded `text-[9px]`, `text-[10px]`, and `text-[11px]`.
 - Use 16px inline icons and 20px icons inside buttons.
-- Allowed radii are `rounded-xl`, `rounded-2xl`, and `rounded-full`. Avoid `rounded`, `rounded-md`, `rounded-lg`, `rounded-3xl`, and arbitrary values such as `rounded-[20px]`.
-- Define the control height and the three radii once as shared tokens. Components should reference the tokens directly.
+- Allowed radii are `rounded-xl`, `rounded-2xl`, and `rounded-full`. Do not use `rounded`, `rounded-md`, `rounded-lg`, `rounded-3xl`, and arbitrary values such as `rounded-[20px]`.
+- Tailwind already maps `rounded-xl` and `rounded-2xl` to the theme variables `--radius-xl` and `--radius-2xl`. Do not redefine these variables. Use Tailwind’s built-in `rounded-full`.
+- Define the control height once as a shared token and reference it from components.
 
 | Recommended token | Value |
 | --- | --- |
 | `--control-h` | 44px (`min-h-11`) |
-| `--radius-xl` | 12px (`rounded-xl`) |
-| `--radius-2xl` | 16px (`rounded-2xl`) |
-| `--radius-full` | Pill or circle (`rounded-full`) |
 
 ## Anatomy
 
@@ -49,7 +48,7 @@ Apply these options in order.
 
 - Keep button labels on a single line, text at least 12px, and controls at least 44px tall.
 - Keep content accessible without clipping. If a row scrolls horizontally, show a fade at the scroll edge.
-- Require confirmation when a destructive action such as Clear shares a row with normal actions.
+- Keep destructive actions (for example Clear) out of the normal action row, and require a confirm.
 - Keep the scrollable body at least half the viewport height. Make large footer panels collapsible or move them to the end of the scroll content.
 
 ## Verification
