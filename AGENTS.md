@@ -97,6 +97,7 @@ Use these exact terms in code, tests, PRs, and reports:
   key in use (PERFORMANCE_KEY); transposing never rewrites `{original_key}`.
 
 ## Repo Guards
+- Mobile UI: read docs/ui/mobile-layout.md before changing mobile layout.
 - Target is Web/PWA (web/). Android is frozen legacy: do not touch unless
   explicitly instructed.
 - Optional online services use Google credentials; never move, log, or commit secrets.
