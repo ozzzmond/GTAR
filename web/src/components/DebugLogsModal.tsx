@@ -99,8 +99,8 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in select-none">
-      <div className="relative w-full max-w-4xl max-h-[90vh] bg-app-surface border border-app-border rounded-2xl shadow-2xl flex flex-col overflow-hidden text-app-text">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in select-none">
+      <div className="relative w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-4xl bg-app-surface border-0 sm:border border-app-border rounded-none sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden text-app-text">
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-app-border bg-app-base gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -119,11 +119,13 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <DebugLogsHelp />
+            <div className="[&>div>button]:w-11 [&>div>button]:h-11 [&>div>button]:rounded-xl sm:[&>div>button]:w-8 sm:[&>div>button]:h-8 sm:[&>div>button]:rounded-lg">
+              <DebugLogsHelp />
+            </div>
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 sm:p-1.5 rounded-xl hover:bg-app-surface text-app-muted hover:text-app-heading transition-colors cursor-pointer flex items-center justify-center"
+              className="w-11 h-11 sm:w-auto sm:h-auto sm:p-1.5 rounded-xl hover:bg-app-surface text-app-muted hover:text-app-heading transition-colors cursor-pointer flex items-center justify-center shrink-0"
               aria-label="Close dialog"
             >
               <X className="w-5 h-5" />
@@ -155,11 +157,11 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
             {/* Primary / secondary row */}
-            <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
+            <div className={`grid ${canShare ? 'grid-cols-3' : 'grid-cols-2'} sm:flex sm:items-center gap-2`}>
               <button
                 type="button"
                 onClick={handleCopyAll}
-                className="w-full sm:w-auto min-h-11 sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-text hover:text-app-action border border-app-border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                className="w-full sm:w-auto h-11 min-h-11 sm:h-auto sm:min-h-0 px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl bg-app-base hover:bg-app-border text-app-text hover:text-app-action border border-app-border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 aria-label="Copy entire log output to clipboard"
               >
                 {copied ? (
@@ -181,7 +183,7 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
                   type="button"
                   data-testid="debug-logs-share"
                   onClick={handleShare}
-                  className="w-full sm:w-auto min-h-11 sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-xl bg-app-base border border-app-border hover:border-app-action text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                  className="w-full sm:w-auto h-11 min-h-11 sm:h-auto sm:min-h-0 px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl bg-app-base border border-app-border hover:border-app-action text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
                 >
                   <Share2 className="w-5 h-5 sm:w-3.5 sm:h-3.5 shrink-0" />
                   <span>Share</span>
@@ -191,9 +193,7 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
               <button
                 type="button"
                 onClick={handleDownload}
-                className={`w-full sm:w-auto min-h-11 sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-xl bg-app-action hover:bg-app-action text-app-on-action text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm active:scale-95 ${
-                  !canShare ? 'col-span-1' : 'col-span-2 sm:col-span-1'
-                }`}
+                className="w-full sm:w-auto h-11 min-h-11 sm:h-auto sm:min-h-0 px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl bg-app-action hover:bg-app-action text-app-on-action text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
               >
                 <Download className="w-5 h-5 sm:w-3.5 sm:h-3.5 shrink-0" />
                 <span className="sm:hidden">Download</span>
@@ -206,7 +206,7 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
               <button
                 type="button"
                 onClick={handleClearLogs}
-                className="w-full sm:w-auto min-h-11 sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-xl bg-[#DC6E67]/20 hover:bg-[#DC6E67] text-status-error hover:text-white border border-[#DC6E67]/40 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                className="w-full sm:w-auto h-11 min-h-11 sm:h-auto sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-xl bg-[#DC6E67]/20 hover:bg-[#DC6E67] text-status-error hover:text-white border border-[#DC6E67]/40 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <Trash2 className="w-5 h-5 sm:w-3.5 sm:h-3.5 shrink-0" />
                 <span>Clear</span>
@@ -218,7 +218,7 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
         {/* Monospace Log Viewer */}
         <div
           ref={logsContainerRef}
-          className="flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed bg-app-base text-app-muted space-y-2 select-text"
+          className="flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed bg-app-base text-app-muted space-y-2 select-text min-h-[50vh] sm:min-h-0"
           style={{ maxHeight: 'calc(90vh - 160px)' }}
         >
           {filteredLogs.length === 0 ? (
@@ -274,17 +274,18 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
 
         {/* Recovery Data Management Section */}
         <div data-testid="debug-logs-recovery-section" className="border-t border-app-border bg-app-surface/90 p-4 sm:p-5 overflow-y-auto max-h-[40vh] space-y-3">
+          {/* Mobile collapsible toggle (below sm only) */}
           <button
             type="button"
             onClick={() => setRecoveryExpanded((prev) => !prev)}
             aria-expanded={recoveryExpanded}
-            className="w-full flex items-center justify-between text-left group cursor-pointer sm:cursor-default"
+            className="sm:hidden w-full min-h-11 flex items-center justify-between text-left cursor-pointer rounded-xl hover:bg-app-base/50 -my-1 py-1"
           >
             <div className="flex items-center gap-2">
               <History className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-              <h3 className="font-extrabold text-xs sm:text-sm tracking-wide text-app-heading">Recovery Data</h3>
+              <h3 className="font-extrabold text-xs tracking-wide text-app-heading">Recovery Data</h3>
             </div>
-            <div className="sm:hidden text-app-muted group-hover:text-app-heading p-1">
+            <div className="text-app-muted p-1">
               {recoveryExpanded ? (
                 <ChevronDown className="w-4 h-4" aria-hidden="true" />
               ) : (
@@ -292,6 +293,13 @@ export const DebugLogsModal: React.FC<DebugLogsModalProps> = ({ isOpen, onClose 
               )}
             </div>
           </button>
+
+          {/* Desktop plain heading (sm and up) */}
+          <div className="hidden sm:flex items-center gap-2">
+            <History className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+            <h3 className="font-extrabold text-sm tracking-wide text-app-heading">Recovery Data</h3>
+          </div>
+
           <div className={`${recoveryExpanded ? 'block' : 'hidden'} sm:block space-y-3`}>
             <p className="text-[11px] text-app-muted">
               Older copies of your songbook that GTAR kept on this device. Your current songbook is not affected.
