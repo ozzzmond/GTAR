@@ -27,11 +27,12 @@ import {
 } from 'lucide-react'
 import { EditorToolbarButton } from './EditorToolbarButton'
 import { EditorHelp } from './menuHelp'
-import { ChordProCodeEditor } from './ChordProCodeEditor'
+import { ChordProCodeEditor, type SectionNavigation } from './ChordProCodeEditor'
 import { DropdownPortal } from './DropdownPortal'
 import { SongLineRenderer } from './SongLineRenderer'
 import { parseGtarSong, standardizeChordProBrackets } from '../utils/songParser'
 import { TextHistory, indentText, type TextEdit } from '../utils/editorText'
+import { findPreviewSection, scrollRawEditor } from '../utils/editorSectionScroll'
 import { normalizeMusicalKey, canonicalSongKey, keysArePitchEquivalent } from '../utils/musicalKey'
 import { parseChordProDirectives, syncCanonicalDirectives, type CanonicalMetadata } from '../utils/chordProMetadata'
 import { declaredKey, resolveSongKeys, transposeContext, wrapKeyOffset } from '../utils/songKeySemantics'
@@ -94,6 +95,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
     setPendingOffset(null)
   }, [suppliedOffset])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const sectionNavigationRef = useRef<SectionNavigation>(null)
   const [insertAnchor, setInsertAnchor] = useState<HTMLButtonElement | null>(null)
   const [insertOpen, setInsertOpen] = useState(false)
 
@@ -381,6 +383,18 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
   const parsedSong = useMemo(() => {
     return parseGtarSong(localRawContent, transposeOffset)
   }, [localRawContent, transposeOffset])
+  const previewHasSections = parsedSong.lines.some((line) => line.type === 'SECTION_HEADER')
+
+  const handlePreviewSectionClick = (lineIndex: number) => {
+    const sectionIndex = parsedSong.lines.slice(0, lineIndex).filter((line) => line.type === 'SECTION_HEADER').length
+    const section = findPreviewSection(localRawContent, sectionIndex)
+    if (!section) return
+    if (editorMode === 'code') {
+      sectionNavigationRef.current?.scrollToSection(section.id)
+    } else if (textareaRef.current) {
+      scrollRawEditor(textareaRef.current, localRawContent, section)
+    }
+  }
 
   // Handle new blank song action with unsaved changes protection
   const handleNewSong = () => {
@@ -1295,7 +1309,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
           </div>
 
           {/* Textarea & Code Editor: Standard ChordPro Notation */}
-          <div className="flex-1 relative flex overflow-hidden">
+          <div className={`flex-1 relative flex overflow-hidden${editorMode === 'raw' && previewHasSections ? ' [container-type:size]' : ''}`}>
             <textarea
               ref={textareaRef}
               data-testid="editor-raw-textarea"
@@ -1308,7 +1322,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
               spellCheck={false}
               className={
                 editorMode === 'raw'
-                  ? 'w-full h-full p-4 bg-app-base text-app-heading font-mono text-sm leading-relaxed focus:outline-none resize-none selection:bg-app-action/30 selection:text-app-heading overflow-y-auto'
+                  ? `w-full h-full p-4 bg-app-base text-app-heading font-mono text-sm leading-relaxed focus:outline-none resize-none selection:bg-app-action/30 selection:text-app-heading overflow-y-auto${previewHasSections ? ' pb-[max(1rem,calc(100cqh-1.25rem))]' : ''}`
                   : 'sr-only'
               }
             />
@@ -1316,6 +1330,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             {editorMode === 'code' && (
               <ChordProCodeEditor
                 rawContent={localRawContent}
+                sectionNavigationRef={previewHasSections ? sectionNavigationRef : undefined}
                 onChange={(newText) => handleRawContentChange(newText)}
                 onSelectRange={(start, end) => {
                   selection.current = { start, end }
@@ -1414,7 +1429,7 @@ export const DesktopEditor: React.FC<DesktopEditorProps> = ({
             </div>
 
             <div className="space-y-1 text-sm font-mono">
-              <SongLineRenderer lines={parsedSong.lines} fontSizePx={14} />
+              <SongLineRenderer lines={parsedSong.lines} fontSizePx={14} onSectionClick={handlePreviewSectionClick} />
             </div>
           </div>
         </div>
