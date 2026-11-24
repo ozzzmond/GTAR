@@ -9,7 +9,7 @@ const { execFileSync } = require('node:child_process')
 const SOURCE_TAG = /^v1\.2\.(0|[1-9]\d*)$/
 // Paths (exact file, or directory prefix ending in "/") that must never reach the public repo.
 const DENY = [
-  '.agents/', '.impeccable/', '.pafs/', '.github/', 'design/', 'docs/', 'tests/',
+  '.agents/', '.claude/', '.impeccable/', '.pafs/', '.github/', 'design/', 'docs/', 'tests/',
   'AGENTS.md', 'CLAUDE.md', 'GLOSSARY.md', 'RELEASE_WORKFLOW_README.md', 'SYNC_RECOVERY.md',
   'gtar_standing_protocol_v1.md', 'plan.md',
   // Public docs are owned by GTAR1 itself (#419); the export never overwrites them.

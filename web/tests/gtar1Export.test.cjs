@@ -13,11 +13,11 @@ test('GTAR PROD v1.2.N maps to GTAR1 v1.0.N and rejects everything else', () => 
 })
 
 test('internal files are excluded and app sources are kept', () => {
-  for (const f of ['AGENTS.md', 'CLAUDE.md', 'plan.md', '.github/workflows/release.yml', '.agents/skills/x/SKILL.md', 'docs/release-history.md',
+  for (const f of ['AGENTS.md', 'CLAUDE.md', 'plan.md', '.github/workflows/release.yml', '.agents/skills/x/SKILL.md', '.claude/settings.json', '.claude/skills/x/SKILL.md', 'docs/release-history.md',
     'tests/a.test.cjs', 'web/tests/a.test.cjs', 'README.md', 'web/.dev.vars', 'web/.env.local', 'web/STAGE_CAST2_P0.md', 'RELEASE_WORKFLOW_README.md']) {
     assert.ok(E.isExcluded(f), f)
   }
-  for (const f of ['web/src/App.tsx', 'web/package.json', 'web/vite.config.ts', 'web/public/pwa-192x192.png', 'web/functions/lib/authCore.ts', 'web/migrations/0001.sql']) {
+  for (const f of ['web/src/App.tsx', 'web/package.json', 'web/vite.config.ts', 'web/public/pwa-192x192.png', 'web/functions/lib/authCore.ts', 'web/migrations/0001.sql', 'web/.claude-notes.md', 'claude/a.md']) {
     assert.ok(!E.isExcluded(f), f)
   }
 })
