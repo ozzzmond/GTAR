@@ -1,7 +1,13 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
-import { useEnabledStageTools } from '../stageTools/settings'
+import {
+  closeStageTool,
+  openStageTool,
+  registerStageToolbar,
+  useActiveStageTool,
+  useEnabledStageTools,
+} from '../stageTools/settings'
 import type { StageTool } from '../stageTools/types'
 
 interface StageToolButtonsProps {
@@ -11,6 +17,38 @@ interface StageToolButtonsProps {
   hidden?: boolean
 }
 
+interface StageToolButtonProps {
+  tool: StageTool
+  buttonClass: string
+  isOpen: boolean
+  onToggle: (anchor: HTMLElement) => void
+}
+
+const StageToolButton: React.FC<StageToolButtonProps> = ({ tool, buttonClass, isOpen, onToggle }) => {
+  const isRunning = tool.useIsRunning ? tool.useIsRunning() : false
+  return (
+    <button
+      type="button"
+      onClick={event => onToggle(event.currentTarget)}
+      aria-label={tool.name}
+      aria-haspopup="dialog"
+      aria-expanded={isOpen}
+      data-testid={`stage-tool-${tool.id}`}
+      className={buttonClass}
+    >
+      <tool.Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
+      <span className="hidden sm:inline">{tool.name}</span>
+      {isRunning && (
+        <span
+          data-testid={`stage-tool-running-${tool.id}`}
+          className="w-2 h-2 rounded-full bg-app-action animate-pulse shrink-0"
+          aria-hidden="true"
+        />
+      )}
+    </button>
+  )
+}
+
 /**
  * Stage toolbar buttons for the tools switched ON in Advanced Tools. Each button opens that tool's
  * compact panel: a bottom sheet on phones, a small card under the toolbar on wider screens. The
@@ -18,8 +56,12 @@ interface StageToolButtonsProps {
  */
 export const StageToolButtons: React.FC<StageToolButtonsProps> = ({ buttonClass, hidden = false }) => {
   const tools = useEnabledStageTools()
-  const [opened, setOpened] = useState<{ id: string; anchor: HTMLElement } | null>(null)
+  const activeTool = useActiveStageTool()
   const previous = useRef(tools)
+
+  useEffect(() => {
+    return registerStageToolbar()
+  }, [])
 
   // A tool switched OFF anywhere (this tab or another) is stopped along with its button.
   useEffect(() => {
@@ -31,53 +73,62 @@ export const StageToolButtons: React.FC<StageToolButtonsProps> = ({ buttonClass,
     previous.current = tools
   }, [tools])
 
-  const open = tools.find(tool => tool.id === opened?.id)
+  useEffect(() => {
+    if (activeTool && !tools.some(t => t.id === activeTool.id)) {
+      closeStageTool(false)
+    }
+  }, [tools, activeTool])
+
+  const open = tools.find(tool => tool.id === activeTool?.id)
   const close = (returnFocus: boolean) => {
-    if (returnFocus) opened?.anchor.focus({ preventScroll: true })
-    setOpened(null)
+    closeStageTool(returnFocus)
   }
 
   return (
     <>
       {tools.map(tool => (
-        <button
+        <StageToolButton
           key={tool.id}
-          type="button"
-          onClick={event => {
-            const anchor = event.currentTarget
-            setOpened(current => (current?.id === tool.id ? null : { id: tool.id, anchor }))
+          tool={tool}
+          buttonClass={buttonClass}
+          isOpen={activeTool?.id === tool.id}
+          onToggle={anchor => {
+            if (activeTool?.id === tool.id) {
+              closeStageTool(true)
+            } else {
+              openStageTool(tool.id, anchor)
+            }
           }}
-          aria-label={tool.name}
-          aria-haspopup="dialog"
-          aria-expanded={open === tool}
-          data-testid={`stage-tool-${tool.id}`}
-          className={buttonClass}
-        >
-          <tool.Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
-          <span className="hidden sm:inline">{tool.name}</span>
-        </button>
+        />
       ))}
-      {open && opened && !hidden && (
-        <StageToolPanel key={open.id} tool={open} anchor={opened.anchor} onClose={close} />
+      {open && activeTool && !hidden && (
+        <StageToolPanel key={open.id} tool={open} anchor={activeTool.anchor ?? null} onClose={close} />
       )}
     </>
   )
 }
 
-interface StageToolPanelProps {
+export interface StageToolPanelProps {
   tool: StageTool
-  anchor: HTMLElement
+  anchor: HTMLElement | null
   onClose: (returnFocus: boolean) => void
 }
 
-const StageToolPanel: React.FC<StageToolPanelProps> = ({ tool, anchor, onClose }) => {
+export const StageToolPanel: React.FC<StageToolPanelProps> = ({ tool, anchor, onClose }) => {
   const panelRef = useRef<HTMLDivElement>(null)
 
   // Wider screens: the card sits just under the toolbar button that opened it.
   useLayoutEffect(() => {
     const panel = panelRef.current
     if (!panel) return
-    const place = () => panel.style.setProperty('--stage-tool-top', `${Math.round(anchor.getBoundingClientRect().bottom + 8)}px`)
+    const place = () => {
+      let top = 65
+      if (anchor && anchor.isConnected) {
+        const rect = anchor.getBoundingClientRect()
+        if (rect.bottom > 0) top = Math.round(rect.bottom + 8)
+      }
+      panel.style.setProperty('--stage-tool-top', `${top}px`)
+    }
     place()
     panel.focus({ preventScroll: true })
     window.addEventListener('resize', place)
@@ -85,36 +136,43 @@ const StageToolPanel: React.FC<StageToolPanelProps> = ({ tool, anchor, onClose }
   }, [anchor])
 
   return createPortal(
-    <div
-      ref={panelRef}
-      role="dialog"
-      aria-label={tool.name}
-      tabIndex={-1}
-      data-testid={`stage-tool-panel-${tool.id}`}
-      onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(true) } }}
-      className="fixed z-40 inset-x-0 bottom-0 max-h-[70dvh] overflow-y-auto rounded-t-2xl border border-app-border bg-app-surface shadow-2xl pb-[env(safe-area-inset-bottom)] focus:outline-none sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-[var(--stage-tool-top)] sm:w-80 sm:max-h-[calc(100dvh-var(--stage-tool-top)-1rem)] sm:rounded-2xl sm:pb-0"
-    >
-      <div className="flex items-center justify-between gap-2 pl-4 pr-1.5 border-b border-app-border">
-        <div className="flex min-w-0 items-center gap-2">
-          <tool.Icon className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
-          <h2 className="text-sm font-bold text-app-heading truncate">{tool.name}</h2>
+    <>
+      <div
+        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs sm:hidden"
+        onClick={() => onClose(true)}
+        aria-hidden="true"
+      />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-label={tool.name}
+        tabIndex={-1}
+        data-testid={`stage-tool-panel-${tool.id}`}
+        onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(true) } }}
+        className="fixed z-50 inset-x-4 top-1/2 -translate-y-1/2 max-h-[90dvh] overflow-y-auto rounded-2xl border border-app-border bg-app-surface shadow-2xl focus:outline-none sm:z-40 sm:inset-x-auto sm:top-[var(--stage-tool-top,65px)] sm:bottom-auto sm:right-4 sm:translate-y-0 sm:w-80 sm:max-h-[calc(100dvh-var(--stage-tool-top,65px)-1rem)]"
+      >
+        <div className="flex items-center justify-between gap-2 pl-4 pr-1.5 border-b border-app-border">
+          <div className="flex min-w-0 items-center gap-2">
+            <tool.Icon className="w-4 h-4 text-app-action shrink-0" aria-hidden="true" />
+            <h2 className="text-sm font-bold text-app-heading truncate">{tool.name}</h2>
+          </div>
+          <div className="flex shrink-0 items-center">
+            {tool.Help && <tool.Help prefer="below" />}
+            <button
+              type="button"
+              onClick={() => onClose(true)}
+              aria-label={`Close ${tool.name}`}
+              className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-app-muted hover:text-app-heading cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center">
-          {tool.Help && <tool.Help prefer="below" />}
-        <button
-          type="button"
-          onClick={() => onClose(true)}
-          aria-label={`Close ${tool.name}`}
-          className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-app-muted hover:text-app-heading cursor-pointer focus-visible:outline-2 focus-visible:outline-app-action"
-        >
-          <X className="w-4 h-4" aria-hidden="true" />
-        </button>
+        <div className="p-4">
+          <tool.Panel />
         </div>
       </div>
-      <div className="p-4">
-        <tool.Panel />
-      </div>
-    </div>,
+    </>,
     document.body,
   )
 }

@@ -86,6 +86,7 @@ import {
   hydrateThemeSettings,
 } from './components/ThemeModal'
 import { TvPresentationModal } from './components/TvPresentationModal'
+import { StageToolHost } from './components/StageToolHost'
 import { stageCast2Enabled } from './utils/stageCast2Local'
 import { stageCast } from './utils/stageCast'
 import { detectSongKey } from './utils/songParser'
@@ -1857,6 +1858,9 @@ function LibraryApp() {
           onClose={() => setSharingSetlist(null)}
         />
       )}
+
+      {/* Stage tool host: renders active tool panel across all views */}
+      <StageToolHost />
 
       {/* Import Shared Setlist Preview Modal */}
       {incomingSharedSetlist && (

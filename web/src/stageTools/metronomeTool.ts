@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react'
 import { Metronome } from 'lucide-react'
 import { MetronomePanel } from '../components/MetronomePanel'
 import { metronome } from '../utils/metronome'
@@ -11,4 +12,10 @@ export const metronomeTool: StageTool = {
   Panel: MetronomePanel,
   Help: MetronomeHelp,
   stop: () => metronome.stop(),
+  useIsRunning: () =>
+    useSyncExternalStore(
+      listener => metronome.subscribe(listener),
+      () => metronome.getState().isRunning,
+      () => false,
+    ),
 }

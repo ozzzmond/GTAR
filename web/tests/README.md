@@ -323,6 +323,7 @@ New or renamed tests await a human choice of primary category.
 - [stageCast2Ui.test.cjs](stageCast2Ui.test.cjs)
 - [stageCommandSeam.test.cjs](stageCommandSeam.test.cjs)
 - [stagePreviewGtar1.test.cjs](stagePreviewGtar1.test.cjs)
+- [stageToolsAnyScreen.test.cjs](stageToolsAnyScreen.test.cjs)
 - [stageToolsSplit.test.cjs](stageToolsSplit.test.cjs)
 - [storageQuotaRecovery.test.cjs](storageQuotaRecovery.test.cjs)
 - [swPrecacheGate.test.cjs](swPrecacheGate.test.cjs)
