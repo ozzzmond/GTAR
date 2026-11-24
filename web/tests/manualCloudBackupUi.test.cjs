@@ -64,7 +64,7 @@ test('Backup & Restore modal renders device backup card and no retired cloud con
     // Device backup card is present
     const deviceCard = document.querySelector('[data-testid="device-backup-card"]')
     assert.ok(deviceCard, 'device backup card present')
-    assert.ok(document.querySelector('[data-testid="save-backup-file-button"]'), 'Save backup button present')
+    assert.ok(document.querySelector('[data-testid="download-backup-button"]'), 'Primary download backup button present')
     assert.ok(document.querySelector('[data-testid="restore-file-button"]'), 'Restore button present')
 
     // Cloud controls are retired (#431, #434)

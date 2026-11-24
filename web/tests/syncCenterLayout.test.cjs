@@ -42,8 +42,8 @@ test('Backup & Restore modal: header bar, device card, footer; retired cloud con
     assert.doesNotMatch(document.body.textContent, /Sync Center/)
     const device = q('device-backup-card')
     assert.match(device.textContent, /^This device \(file\)/)
-    assert.deepEqual(buttons(device), ['Save backup file', 'Download backup', 'Copy backup', 'Restore from file'])
-    assert.ok(q('save-backup-file-button').className.includes('bg-app-action') && q('save-backup-file-button').className.includes('w-full'))
+    assert.deepEqual(buttons(device), ['Download backup', 'Copy backup', 'Restore from file'])
+    assert.ok(q('download-backup-button').className.includes('bg-app-action') && q('download-backup-button').className.includes('w-full'))
     assert.ok(q('restore-file-button').className.includes('border-app-border'))
     assert.match(device.textContent, /On this device1 songs · 0 setlists · 0 in trash/)
 
@@ -62,7 +62,7 @@ test('offline / signed out: device card works, no cloud backup controls rendered
   const { root, calls } = await mount(false)
   try {
     assert.ok(q('device-backup-card'))
-    assert.ok(q('save-backup-file-button') && q('restore-file-button'))
+    assert.ok(q('download-backup-button') && q('restore-file-button'))
     assert.equal(q('cloud-backup-card'), null)
     assert.equal(q('cloud-sync-account-card'), null)
     assert.ok(q('cloud-sync-modal-header') && q('cloud-sync-modal-footer'))
