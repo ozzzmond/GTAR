@@ -229,7 +229,7 @@ export const SetlistManager: React.FC<SetlistManagerProps> = ({
           </div>
         </div>
 
-        <div className="p-3 space-y-2 overflow-y-auto flex-1 min-h-0">
+        <div data-testid="setlist-manager-scroll" className="p-3 space-y-2 overflow-y-auto flex-1 min-h-0">
           {!current ? (
             <div data-testid="setlist-manager-no-setlists" className={`${sectionCard} text-center text-xs text-app-muted py-6`}>
               No setlists yet. Create one from the Music Explorer.

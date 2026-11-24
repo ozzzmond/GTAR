@@ -8,7 +8,7 @@ import { DropdownPortal } from './DropdownPortal'
 import { SongsLibraryHelp } from './menuHelp'
 import { SetlistWorkspace, type SetlistWorkspaceScope } from './SetlistWorkspace'
 import type { ExplorerTarget } from './MusicExplorerNav'
-import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useMemo, useRef, useCallback, useEffect, useImperativeHandle } from 'react'
 import { useListWindow } from '../utils/listWindow'
 import {
   ListPlus,
@@ -52,6 +52,8 @@ import { useOptionalGoogleAuth } from '../utils/authContext'
 import { getStoredSessionStatus } from '../utils/googleAuth'
 
 interface SongbookHomeViewProps {
+  initialListPosition?: SongbookListPosition
+  readListPositionRef?: React.Ref<() => SongbookListPosition>
   onSongMembershipChange: (songId: string | number, setlistId: string | number, included: boolean) => boolean
   onCreateSetlistForSong: (songId: string | number, name: string) => boolean
   folders?: SetlistFolder[]
@@ -108,6 +110,11 @@ interface SongbookHomeViewProps {
 
 const cardMenuItem = 'w-full min-h-11 px-2.5 rounded-lg text-left hover:bg-app-base text-app-text flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
 
+export interface SongbookListPosition {
+  filterSetlistId: string
+  sortDirection: 'asc' | 'desc'
+}
+
 export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   songs,
   trashDropIds, onDismissTrashDrop,
@@ -151,6 +158,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   workspaceWidth: controlledWorkspaceWidth,
   onWorkspaceWidthChange,
   onPreviewSong,
+  initialListPosition,
+  readListPositionRef,
 }) => {
   const isDesktop = useIsDesktop()
   const [localWorkspaceOpen, setLocalWorkspaceOpen] = useState(readWorkspaceEnabled)
@@ -411,6 +420,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   const [isExportSongsOpen, setIsExportSongsOpen] = useState(false)
 
   const [filterSetlistId, setFilterSetlistId] = useState<string>(() => {
+    if (initialListPosition) return initialListPosition.filterSetlistId
     if (typeof window !== 'undefined') {
       // #320 Codex P2: Clear persisted setlist filter on load so pre-PR state does not trap users with hidden songs
       try { localStorage.removeItem('gtar_songbook_filter_setlist') } catch { /* ignore */ }
@@ -447,7 +457,8 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
   }
 
   // GTAR1 sort pills: selecting the active field flips the direction.
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(initialListPosition?.sortDirection ?? 'asc')
+  useImperativeHandle(readListPositionRef, () => () => ({ filterSetlistId, sortDirection }), [filterSetlistId, sortDirection])
   const handleSortChange = (newSort: SortOption) => {
     setSortDirection(prev => (newSort === sortBy ? (prev === 'asc' ? 'desc' : 'asc') : 'asc'))
     setSortBy(newSort)
