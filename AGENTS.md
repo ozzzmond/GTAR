@@ -62,6 +62,18 @@ audit-fix Git restrictions and verification section apply only to audit-fix work
 - Issue updates are concise and evidence-based (status, change, tests, PR,
   head SHA, blockers, next). No progress chatter.
 
+### Branches and attribution
+
+- Use task-based branch names such as `fix/gh609-app-bar-44px`.
+- Open draft PRs with a change summary, validation results, and any owner QA
+  notes. Omit automatic product attribution, session links, and AI co-author
+  trailers from new commit messages and PR descriptions.
+- If Claude Code Web assigns a vendor-prefixed branch or its PR tool would
+  add attribution, send the branch name, head SHA, and clean PR body to the
+  owner before opening a PR. The owner can publish the same commits under a
+  GTAR branch name and open the draft directly on GitHub. See
+  [Claude Code issue #107892](https://github.com/anthropics/claude-code/issues/107892).
+
 ## Task setup
 - Agent prompts come from chat; there is no Prompt Board.
 - Always `git fetch origin dev` and branch from `origin/dev`.
