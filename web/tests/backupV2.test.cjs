@@ -284,13 +284,26 @@ test('share unsupported → download fallback; share failure → download; cance
   assert.equal(downloads.length, 1)
 })
 
-test('NotAllowedError keeps the verified file for one more tap', async () => {
+test('NotAllowedError keeps the verified file for one more tap, then falls back to download if still rejected', async () => {
   const backup = smallBackup()
   const { env, calls } = fakeEnv({ shareError: n => n === 1 ? named('NotAllowedError') : null })
   assert.deepEqual(await ex.shareOrDownloadBackup(backup, env), { kind: 'needs-tap' })
   assert.equal(status.readBackupStatus(), null)
-  assert.deepEqual(await ex.shareOrDownloadBackup(backup, env), { kind: 'shared' })
+  assert.deepEqual(await ex.shareOrDownloadBackup(backup, env, { allowNeedsTap: false }), { kind: 'shared' })
   assert.equal(calls.share, 2); assert.deepEqual(calls.downloads, [])
+
+  const persistentReject = fakeEnv({ shareError: named('NotAllowedError') })
+  assert.deepEqual(await ex.shareOrDownloadBackup(backup, persistentReject.env), { kind: 'needs-tap' })
+  assert.deepEqual(await ex.shareOrDownloadBackup(backup, persistentReject.env, { allowNeedsTap: false }), { kind: 'downloaded', reason: 'share-failed' })
+  assert.equal(persistentReject.calls.share, 2)
+  assert.deepEqual(persistentReject.calls.downloads, [backup.fileName])
+})
+
+test('supportsBackupFileShare reflects file-sharing capability safely', () => {
+  assert.equal(ex.supportsBackupFileShare({ navigator: { share: async () => {}, canShare: () => true } }), true)
+  assert.equal(ex.supportsBackupFileShare({ navigator: { share: async () => {}, canShare: () => false } }), false)
+  assert.equal(ex.supportsBackupFileShare({ navigator: {} }), false)
+  assert.equal(ex.supportsBackupFileShare({ navigator: { share: async () => {}, canShare: () => { throw new Error('boom') } } }), false)
 })
 
 test('Copy JSON only for small backups and only reports success after the clipboard accepted it', async () => {
@@ -513,6 +526,59 @@ test('dialog export: share sheet path with wording that never claims an upload',
   assert.equal(document.querySelector('[data-testid="backup-status"]'), null)
   // Download path from the same dialog.
   await act(async () => button('Download backup').click())
+  assert.equal(calls.downloads.length, 1)
+  assert.match(document.body.textContent, /handed to browser downloads/)
+}))
+
+test('dialog export: repeated NotAllowedError on Open share sheet falls back to download with clear feedback', withJsdom(async ({ root }) => {
+  persistLibrary({ songs: [current], setlists: [] })
+  const { env, calls } = fakeEnv({ shareError: named('NotAllowedError') })
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
+    isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, exportEnv: env,
+  })))
+  await act(async () => new Promise(r => setTimeout(r, 5)))
+  await act(async () => button('Save backup file').click())
+  assert.ok(button('Open share sheet'))
+  assert.match(document.body.textContent, /Tap "Open share sheet"/)
+  assert.equal(calls.downloads.length, 0)
+
+  await act(async () => button('Open share sheet').click())
+  assert.equal(calls.share, 2)
+  assert.equal(calls.downloads.length, 1)
+  assert.match(document.body.textContent, /The share sheet failed, so Backup file verified/)
+  assert.match(document.body.textContent, /handed to browser downloads/)
+  assert.ok(button('Save backup file'), 'preparedBackup cleared after fallback download')
+}))
+
+test('dialog export: AbortError cancellation gives clear feedback without downloading', withJsdom(async ({ root }) => {
+  persistLibrary({ songs: [current], setlists: [] })
+  const { env, calls } = fakeEnv({ shareError: n => n === 1 ? named('NotAllowedError') : named('AbortError') })
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
+    isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, exportEnv: env,
+  })))
+  await act(async () => new Promise(r => setTimeout(r, 5)))
+  await act(async () => button('Save backup file').click())
+  assert.ok(button('Open share sheet'))
+  await act(async () => button('Open share sheet').click())
+  assert.equal(calls.share, 2)
+  assert.equal(calls.downloads.length, 0)
+  assert.equal(status.readBackupStatus(), null)
+  assert.match(document.body.textContent, /Share cancelled\. No backup was saved\./)
+  assert.ok(button('Save backup file'))
+}))
+
+test('dialog export: prefers Download backup as primary action when file sharing is unsupported', withJsdom(async ({ root }) => {
+  persistLibrary({ songs: [current], setlists: [] })
+  const { env, calls } = fakeEnv({ canShare: false })
+  await act(async () => root.render(React.createElement(DeviceBackupCard, {
+    isOpen: true, onClose: () => {}, allSongs: [current], setlists: [], onImportAllSongs: () => {}, exportEnv: env,
+  })))
+  await act(async () => new Promise(r => setTimeout(r, 5)))
+  assert.equal(button('Save backup file'), undefined)
+  const primaryDownload = document.querySelector('[data-testid="download-backup-button"]')
+  assert.ok(primaryDownload)
+  assert.ok(primaryDownload.className.includes('bg-app-action'))
+  await act(async () => primaryDownload.click())
   assert.equal(calls.downloads.length, 1)
   assert.match(document.body.textContent, /handed to browser downloads/)
 }))

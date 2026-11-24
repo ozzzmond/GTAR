@@ -58,11 +58,29 @@ export function downloadBackup(backup: VerifiedBackup, env: ExportEnvironment = 
   return finish(backup, 'download', { kind: 'downloaded', ...(reason ? { reason } : {}) })
 }
 
+export interface ShareBackupOptions {
+  /** Allow returning `needs-tap` once on `NotAllowedError` so a fresh tap can open the share sheet. */
+  allowNeedsTap?: boolean
+}
+
+/** True when this browser reports support for sharing a JSON backup file. */
+export function supportsBackupFileShare(env: ExportEnvironment = {}): boolean {
+  const n = nav(env)
+  if (!n || typeof n.share !== 'function' || typeof n.canShare !== 'function') return false
+  const file = defaultFile('{}', 'gtar-backup-probe.json') ?? env.makeFile?.('{}', 'gtar-backup-probe.json') ?? null
+  try { return !!file && n.canShare({ files: [file] }) } catch { return false }
+}
+
 /**
  * Share sheet first; download when sharing files is not supported or fails for another reason.
- * A user cancel is respected (no automatic download). `NotAllowedError` keeps the file for a tap.
+ * A user cancel is respected (no automatic download). `NotAllowedError` keeps the file for one
+ * fresh tap when `allowNeedsTap` is enabled, then falls back to download if it still fails.
  */
-export async function shareOrDownloadBackup(backup: VerifiedBackup, env: ExportEnvironment = {}): Promise<ExportOutcome> {
+export async function shareOrDownloadBackup(
+  backup: VerifiedBackup,
+  env: ExportEnvironment = {},
+  options: ShareBackupOptions = {},
+): Promise<ExportOutcome> {
   const n = nav(env)
   const file = (env.makeFile ?? defaultFile)(backup.json, backup.fileName)
   const supported = (() => {
@@ -75,7 +93,7 @@ export async function shareOrDownloadBackup(backup: VerifiedBackup, env: ExportE
   } catch (error) {
     const name = (error as { name?: string } | null)?.name
     if (name === 'AbortError') return { kind: 'share-cancelled' }
-    if (name === 'NotAllowedError') return { kind: 'needs-tap' }
+    if (name === 'NotAllowedError' && options.allowNeedsTap !== false) return { kind: 'needs-tap' }
     return downloadBackup(backup, env, 'share-failed')
   }
 }

@@ -4,7 +4,7 @@ import type { TagColors } from '../utils/songTags'
 import type { SetlistFolder } from '../types/gtar'
 import { appLogger } from '../utils/logger'
 import { previewBackupImport, confirmImportAsNew } from '../utils/legacyImport'
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Copy, Share2, Upload } from 'lucide-react'
 import type { ActiveSongState, WebSetlist } from '../types/gtar'
 import { GTAR_APP_VERSION, GTAR_DEV_VERSION } from '../types/gtar'
@@ -25,7 +25,7 @@ import {
 } from '../utils/backupSettings'
 import { isQuotaError } from '../utils/syncJournal'
 import {
-  canCopyBackup, copyBackup, downloadBackup, ensureRestoreSafetySnapshot, libraryWritesSaved, shareOrDownloadBackup, skippedMergeSetlists, verifyRestoredLibrary,
+  canCopyBackup, copyBackup, downloadBackup, ensureRestoreSafetySnapshot, libraryWritesSaved, shareOrDownloadBackup, skippedMergeSetlists, supportsBackupFileShare, verifyRestoredLibrary,
   type ExportEnvironment, type ExportOutcome,
 } from '../utils/backupExport'
 
@@ -156,6 +156,8 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
   useEffect(() => { busyCallback.current = onBusyChange }, [onBusyChange])
   useEffect(() => { busyCallback.current?.(isRestoring || isExporting) }, [isRestoring, isExporting])
 
+  const canShareBackup = useMemo(() => supportsBackupFileShare(exportEnv), [exportEnv])
+
   if (!isOpen) return null
 
   // Results stay on screen until the next action (the center no longer closes itself).
@@ -197,6 +199,7 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
     try {
       // #251 F3: a prepared file is reused only while it still matches the library and settings.
       let backup = preparedBackup
+      const hadPrepared = Boolean(backup)
       let rebuilt = false
       if (backup) {
         const prepared = backup
@@ -207,7 +210,7 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
       }
       backup = backup ?? prepareBackup()
       if (!backup) return
-      const outcome = await shareOrDownloadBackup(backup, exportEnv)
+      const outcome = await shareOrDownloadBackup(backup, exportEnv, { allowNeedsTap: !hadPrepared || rebuilt })
       if (rebuilt && outcome.kind === 'needs-tap') {
         setPreparedBackup(backup)
         showFeedback('info', `Your library or settings changed after the earlier file was prepared, so a new backup was created and verified (${countsText(backup.counts)}). Tap "Open share sheet" to save it.`)
@@ -529,20 +532,35 @@ export const DeviceBackupCard: React.FC<DeviceBackupCardProps> = ({
         />
       ) : (
         <div className="space-y-2 pt-1">
-          <button type="button" data-testid="save-backup-file-button" disabled={isExporting} onClick={handleSaveBackup} className={primaryButton}>
-            <Share2 className="w-4 h-4" aria-hidden="true" />
-            <span>{isExporting ? 'Preparing backup…' : preparedBackup ? 'Open share sheet' : 'Save backup file'}</span>
-          </button>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={handleDownloadBackup} className={secondaryButton}>
-              <Download className="max-sm:hidden w-3.5 h-3.5 text-app-action" aria-hidden="true" />
-              <span>Download backup</span>
-            </button>
-            <button type="button" onClick={handleCopyBackup} className={secondaryButton}>
-              <Copy className="max-sm:hidden w-3.5 h-3.5 text-app-action" aria-hidden="true" />
-              <span>Copy backup</span>
-            </button>
-          </div>
+          {Boolean(preparedBackup) || canShareBackup ? (
+            <>
+              <button type="button" data-testid="save-backup-file-button" disabled={isExporting} onClick={handleSaveBackup} className={primaryButton}>
+                <Share2 className="w-4 h-4" aria-hidden="true" />
+                <span>{isExporting ? 'Preparing backup…' : preparedBackup ? 'Open share sheet' : 'Save backup file'}</span>
+              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={handleDownloadBackup} className={secondaryButton}>
+                  <Download className="max-sm:hidden w-3.5 h-3.5 text-app-action" aria-hidden="true" />
+                  <span>Download backup</span>
+                </button>
+                <button type="button" onClick={handleCopyBackup} className={secondaryButton}>
+                  <Copy className="max-sm:hidden w-3.5 h-3.5 text-app-action" aria-hidden="true" />
+                  <span>Copy backup</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <button type="button" data-testid="download-backup-button" onClick={handleDownloadBackup} className={primaryButton}>
+                <Download className="w-4 h-4" aria-hidden="true" />
+                <span>Download backup</span>
+              </button>
+              <button type="button" onClick={handleCopyBackup} className={`w-full ${secondaryButton}`}>
+                <Copy className="max-sm:hidden w-3.5 h-3.5 text-app-action" aria-hidden="true" />
+                <span>Copy backup</span>
+              </button>
+            </>
+          )}
           <button type="button" data-testid="restore-file-button" disabled={isRestoring || restoreBlocked}
             onClick={() => restoreFileInputRef.current?.click()} className={outlinedButton}>
             <Upload className="w-3.5 h-3.5 text-app-action" aria-hidden="true" />
