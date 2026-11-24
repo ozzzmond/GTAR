@@ -46,10 +46,21 @@ async function app(run, setlistEntries = entries) {
     window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
     localStorage.setItem('gtar_library_v1', JSON.stringify({ songs: library,
       setlists: [{ id: 'qa-set', name: 'QA Set', songs: setlistEntries }] }))
+    window.scrollTo = () => {}
     try {
       await render(require('../src/App.tsx').default, {})
       await run({ click })
     } finally { Object.assign(global, previous) }
+  })
+}
+
+async function stageBack() {
+  const button = $('[data-testid="toolbar-back"]')
+  assert.ok(button, 'Stage Back exists')
+  await act(async () => {
+    const returned = new Promise(resolve => window.addEventListener('popstate', resolve, { once: true }))
+    button.click()
+    await returned
   })
 }
 
@@ -91,20 +102,20 @@ test('#453 setlist row opens its exact queue position; arrows and swipes preserv
 test('#453 viewer Back returns to the originating setlist page', async () => app(async ({ click }) => {
   await openSetlist(click)
   await click($('[aria-label="Next Song"]')); await pause()
-  await click($('[data-testid="toolbar-back"]'))
+  await stageBack()
   assert.match($('[data-testid="workspace-setlist-header"]')?.textContent ?? '', /QA Set/)
   assert.ok($('[data-testid="workspace-entry-2"]'))
 }))
 
 test('#453 Open button selects a duplicate occurrence; Play in Stage keeps the same queue', async () => app(async ({ click }) => {
   await openSetlist(click)
-  await click($('[data-testid="toolbar-back"]'))
+  await stageBack()
   await click($('[data-testid="workspace-entry-open-2"]'))
   assert.equal(position(), '3/3', 'Open keeps the last occurrence, rather than finding the first matching song')
-  await click($('[data-testid="toolbar-back"]'))
+  await stageBack()
   await click($('[data-testid="workspace-entry-play-1"]'))
   assert.equal(position(), '2/3')
-  await click($('[data-testid="toolbar-back"]'))
+  await stageBack()
   await click($('[data-testid="workspace-play-setlist"]'))
   assert.equal(position(), '1/3')
 }))
@@ -122,19 +133,19 @@ test('#453 broken shortcuts remain disabled and viewer navigation handles unavai
   await click($('[aria-label="Next Song"]')); await pause()
   assert.equal(position(), '4/5')
   assert.match(document.querySelector('main').textContent, /Alpha/)
-  await click($('[data-testid="toolbar-back"]'))
+  await stageBack()
   for (const index of [0, 2]) assert.equal($(`[data-testid="workspace-entry-open-${index}"]`).disabled, true)
 }, [{ id: 'gone', title: 'Gone' }, entries[0], { id: 'trashed', title: 'Trashed song' }, entries[1], entries[2]]))
 
 test('#453 Songbook-origin queue and Back remain unchanged after leaving a setlist', async () => app(async ({ click }) => {
   await openSetlist(click)
-  await click($('[data-testid="toolbar-back"]'))
+  await stageBack()
   await click($('[data-testid="explorer-sidebar"] [data-testid="explorer-nav-all-songs"]'))
   await click($('[data-testid="song-card-0"]'))
   assert.equal(position(), '1/4')
   await click($('[aria-label="Next Song"]')); await pause()
   assert.equal(position(), '2/4')
-  await click($('[data-testid="toolbar-back"]'))
+  await stageBack()
   assert.ok($('[data-testid="song-card-0"]'))
   assert.equal($('[data-testid="workspace-setlist-header"]'), null)
 }))

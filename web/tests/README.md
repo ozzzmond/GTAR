@@ -308,6 +308,7 @@ New or renamed tests await a human choice of primary category.
 - [setlistWorkspaceGtar1.test.cjs](setlistWorkspaceGtar1.test.cjs)
 - [smartThemeBackup372.test.cjs](smartThemeBackup372.test.cjs)
 - [songExport.test.cjs](songExport.test.cjs)
+- [songNavigation626.test.cjs](songNavigation626.test.cjs)
 - [songbookTagFilter.test.cjs](songbookTagFilter.test.cjs)
 - [songsLibraryMenu.test.cjs](songsLibraryMenu.test.cjs)
 - [stageAutoFollowRender.test.cjs](stageAutoFollowRender.test.cjs)

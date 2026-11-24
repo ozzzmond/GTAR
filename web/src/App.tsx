@@ -65,7 +65,7 @@ import { Header } from './components/Header'
 import { DesktopEditor } from './components/DesktopEditor'
 import { StageView } from './components/StageView'
 import { StagePresentationView } from './components/StagePresentationView'
-import { SongbookHomeView } from './components/SongbookHomeView'
+import { SongbookHomeView, type SongbookListPosition } from './components/SongbookHomeView'
 import { TrashView } from './components/TrashView'
 import { KeyPickerModal } from './components/KeyPickerModal'
 import { ExplorerNavigation } from './components/ExplorerNavigation'
@@ -95,7 +95,7 @@ import type { ActiveSongState, WebSetlist, SetlistFolder } from './types/gtar'
 import type { FetchedChordSheet } from './utils/onlineSearch'
 import { isDevEnv } from './utils/env'
 import { readWorkspaceWidth, rememberWorkspaceWidth, clampWorkspaceWidth } from './utils/workspacePreview'
-import { buildViewHistoryState, isGtarViewHistoryState } from './utils/viewHistory'
+import { buildViewHistoryState, isGtarViewHistoryState, type GtarViewHistoryState } from './utils/viewHistory'
 
 // The import dialog pulls in ChordSheetJS (~230 KB); load it only when first opened (#85).
 const ImportDialogModal = lazy(() => import('./components/ImportDialogModal').then(m => ({ default: m.ImportDialogModal })))
@@ -240,6 +240,23 @@ function LibraryStartupReadyInner() {
   </>
 }
 
+interface SongbookReturnContext {
+  view: ExplorerTarget
+  setlistId: string | number | null
+  songId: ActiveSongState['id']
+  query: string
+  listPosition?: SongbookListPosition
+  scrollY: number
+  search?: { scrollTop: number }
+  manager?: { id: string | number; scrollTop: number }
+}
+
+interface AppHistoryState extends GtarViewHistoryState {
+  gtarSession?: string
+  gtarSongbook?: SongbookReturnContext
+  gtarSongReturnDepth?: number
+}
+
 function LibraryApp() {
   const { active: bandSyncEnabled, remote: bandRemote } = useBandSyncGate()
   const [recoveryDataOpen, setRecoveryDataOpen] = useState(false)
@@ -340,41 +357,14 @@ function LibraryApp() {
     }
   }, [bandRemote, bandSyncEnabled])
 
-  // DEV.5a: mirror view changes into browser history (Back semantics, no hardcoded route).
-  const viewFromHistoryRef = useRef(false)
+  const [historySession] = useState(generateUUID)
+  const [songbookReturn, setSongbookReturn] = useState<SongbookReturnContext>()
+  const songbookPositionRef = useRef<(() => SongbookListPosition) | null>(null)
   const activeViewRef = useRef(activeView)
-  useEffect(() => {
-    activeViewRef.current = activeView
-    if (typeof window === 'undefined' || !window.history) return
-    const current: unknown = window.history.state
-    if (!isGtarViewHistoryState(current)) {
-      window.history.replaceState(buildViewHistoryState(activeView, 0, current), '')
-      viewFromHistoryRef.current = false
-      return
-    }
-    if (viewFromHistoryRef.current) {
-      viewFromHistoryRef.current = false
-      return
-    }
-    if (current.gtarView !== activeView) {
-      window.history.pushState(buildViewHistoryState(activeView, current.gtarDepth + 1, null), '')
-    }
-  }, [activeView])
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const onPopState = (event: PopStateEvent) => {
-      const state: unknown = event.state
-      if (!isGtarViewHistoryState(state) || state.gtarView === activeViewRef.current) return
-      const next = () => {
-        viewFromHistoryRef.current = true
-        setActiveView(state.gtarView)
-      }
-      if (editorNavigationGuard.current) editorNavigationGuard.current(next)
-      else next()
-    }
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [])
+  const viewFromHistoryRef = useRef(false)
+  const capturedSongbookRef = useRef(false)
+  const returningToSongbookRef = useRef(false)
+
   const [songs, setSongs] = useState<ActiveSongState[]>(initialLibrary.active)
   const [deletedSongs, setDeletedSongs] = useState<ActiveSongState[]>(initialLibrary.deleted)
 
@@ -633,7 +623,7 @@ function LibraryApp() {
           const cleanUrl = new URL(window.location.href)
           if (cleanUrl.searchParams.has('share')) {
             cleanUrl.searchParams.delete('share')
-            window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
+            window.history.replaceState(window.history.state, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
           }
         } catch { /* ignore */ }
         return
@@ -654,7 +644,7 @@ function LibraryApp() {
           const cleanUrl = new URL(window.location.href)
           if (cleanUrl.searchParams.has('share')) {
             cleanUrl.searchParams.delete('share')
-            window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
+            window.history.replaceState(window.history.state, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
           }
         } catch { /* ignore */ }
         queueMicrotask(() => {
@@ -736,7 +726,7 @@ function LibraryApp() {
             const cleanUrl = new URL(window.location.href)
             if (resolvedShareRef.current === tokenToFetch && cleanUrl.searchParams.has('share')) {
               cleanUrl.searchParams.delete('share')
-              window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
+              window.history.replaceState(window.history.state, document.title, cleanUrl.pathname + (cleanUrl.search || ''))
             }
           } catch { /* ignore */ }
         })
@@ -1045,10 +1035,34 @@ function LibraryApp() {
   const handleExplorerSelect = (target: ExplorerTarget) => {
     setIsSetlistDrawerOpen(false)
     navigateSafely(() => {
+      setSongbookReturn(undefined)
       setExplorerSelection(target)
       setWorkspaceSetlistId(null)
       setActiveView('songbook')
     })
+  }
+
+  const openStage = (songId = songs[activeSongIndex]?.id, origin?: 'search' | 'manager') => {
+    const current: AppHistoryState | null = window.history.state
+    if (activeView === 'songbook' && current?.gtarView === 'songbook' && current.gtarSession === historySession) {
+      const search = origin === 'search' ? document.getElementById('global-search-results') : null
+      const manager = origin === 'manager' ? document.querySelector<HTMLElement>('[data-testid="setlist-manager-scroll"]') : null
+      const context: SongbookReturnContext = {
+        view: explorerSelection,
+        setlistId: workspaceSetlistId,
+        songId,
+        query: searchQuery,
+        listPosition: songbookPositionRef.current?.(),
+        scrollY: window.scrollY,
+        search: search ? { scrollTop: search.scrollTop } : undefined,
+        manager: manager && setlistManagerId !== null ? { id: setlistManagerId, scrollTop: manager.scrollTop } : undefined,
+      }
+      capturedSongbookRef.current = true
+      window.history.scrollRestoration = 'manual'
+      window.history.replaceState({ ...current, gtarSongbook: context }, '')
+    }
+    setSongbookReturn(undefined)
+    setActiveView('stage')
   }
 
   // Import online chord sheet directly into songbook library
@@ -1068,7 +1082,7 @@ function LibraryApp() {
       if (openInStage) {
         setActiveSongIndex(existingIdx)
         setQueueMode('library')
-        setActiveView('stage')
+        openStage(songs[existingIdx]?.id)
       }
       return
     }
@@ -1092,7 +1106,7 @@ function LibraryApp() {
     if (openInStage) {
       setActiveSongIndex(0)
       setQueueMode('library')
-      setActiveView('stage')
+      openStage(newSong.id)
     }
   }
 
@@ -1333,6 +1347,7 @@ function LibraryApp() {
   // Navigate Home (Logo click / Songbook tab opens Songbook Library)
   const handleNavigateHome = useCallback(() => {
     setQueueMode('library')
+    setSongbookReturn(undefined)
     setActiveView('songbook')
     setSearchQuery('')
     setIsSetlistDrawerOpen(false)
@@ -1428,7 +1443,7 @@ function LibraryApp() {
     setActiveSetlistId(newSetlist.id)
     setActiveSetlistSongIndex(0)
     setQueueMode('setlist')
-    setActiveView('stage')
+    openStage()
     setIncomingSharedSetlist(null)
   }
 
@@ -1513,6 +1528,103 @@ function LibraryApp() {
     return true
   }
 
+  // The originating songbook entry owns its snapshot. Stage and its editor
+  // carry the depth needed to return to that entry without pushing a new view.
+  useLayoutEffect(() => {
+    activeViewRef.current = activeView
+    const current: AppHistoryState | null = window.history.state
+    if (!isGtarViewHistoryState(current) || current.gtarSession !== historySession) {
+      window.history.replaceState(buildViewHistoryState(activeView, 0, {
+        ...current, gtarSession: historySession, gtarSongbook: undefined, gtarSongReturnDepth: undefined,
+      }), '')
+    } else if (current.gtarView !== activeView && !viewFromHistoryRef.current) {
+      let returnDepth: number | undefined
+      if (current.gtarView === 'songbook') {
+        if (activeView === 'stage' && capturedSongbookRef.current) {
+          returnDepth = current.gtarDepth
+        } else if (current.gtarSongbook) {
+          // A later, unrelated departure must not replay a previous song visit.
+          window.history.replaceState({ ...current, gtarSongbook: undefined }, '')
+          window.history.scrollRestoration = 'auto'
+        }
+      } else if ((activeView === 'stage' && current.gtarView === 'editor') ||
+                 (activeView === 'editor' && current.gtarView === 'stage')) {
+        returnDepth = current.gtarSongReturnDepth
+      }
+      window.history.pushState(buildViewHistoryState(activeView, current.gtarDepth + 1, {
+        gtarSession: historySession, gtarSongReturnDepth: returnDepth,
+      }), '')
+    }
+    viewFromHistoryRef.current = false
+    capturedSongbookRef.current = false
+    returningToSongbookRef.current = false
+  }, [activeView, historySession])
+
+  useLayoutEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      const state: AppHistoryState | null = event.state
+      if (!isGtarViewHistoryState(state) || state.gtarSession !== historySession) return
+      const next = () => {
+        const context = state.gtarView === 'songbook' ? state.gtarSongbook : undefined
+        setSongbookReturn(context)
+        if (context) {
+          const index = songs.findIndex(song => song.id === context.songId)
+          if (index >= 0) setActiveSongIndex(index)
+          const view = context.view
+          setExplorerSelection(view.type === 'FOLDER' && !folders.some(folder => folder.id === view.folderId)
+            ? { type: 'UNFILED_SETLISTS' } : view)
+          setWorkspaceSetlistId(setlists.some(list => !list.isDeleted && list.id === context.setlistId) ? context.setlistId : null)
+          setSearchQuery(context.query)
+          setIsSetlistDrawerOpen(false)
+          if (context.manager && setlists.some(list => !list.isDeleted && list.id === context.manager?.id)) {
+            setSetlistManagerId(context.manager.id)
+            setIsSetlistManagerOpen(true)
+          }
+        }
+        if (state.gtarView !== activeViewRef.current) {
+          viewFromHistoryRef.current = true
+          setActiveView(state.gtarView)
+        }
+      }
+      if (editorNavigationGuard.current) editorNavigationGuard.current(next)
+      else next()
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [historySession, songs, folders, setlists, setIsSetlistDrawerOpen])
+
+  useLayoutEffect(() => {
+    if (activeView !== 'songbook' || !songbookReturn) return
+    const restoreScroll = () => window.scrollTo({ top: songbookReturn.scrollY, behavior: 'instant' })
+    restoreScroll()
+    const manager = document.querySelector<HTMLElement>('[data-testid="setlist-manager-scroll"]')
+    if (manager && songbookReturn.manager) manager.scrollTop = songbookReturn.manager.scrollTop
+    // The virtualized song grid may still be sizing its spacer on this commit.
+    if (window.scrollY < songbookReturn.scrollY) {
+      const frame = window.requestAnimationFrame(restoreScroll)
+      return () => window.cancelAnimationFrame(frame)
+    }
+  }, [activeView, songbookReturn])
+
+  const returnFromStage = () => {
+    const current: AppHistoryState | null = window.history.state
+    if (current?.gtarView === 'stage' && current.gtarSession === historySession) {
+      const origin = current.gtarSongReturnDepth
+      if (origin !== undefined && origin < current.gtarDepth) {
+        if (returningToSongbookRef.current) return
+        returningToSongbookRef.current = true
+        window.history.go(origin - current.gtarDepth)
+        return
+      }
+      // A resumed or directly opened Stage has no originating list entry.
+      window.history.replaceState(buildViewHistoryState('songbook', current.gtarDepth, {
+        gtarSession: historySession,
+      }), '')
+    }
+    setSongbookReturn(undefined)
+    setActiveView('songbook')
+  }
+
   return (
     <TagLibraryContext.Provider value={{ colors: tagColors, onColorChange: handleTagColor, onAddToTag: handleBulkAddToTag }}>
     {activeView === 'songbook' && <ExplorerDragDrop songs={songs} setlists={setlists} folders={folders}
@@ -1541,7 +1653,7 @@ function LibraryApp() {
       onPlaySetlist={(setlistId, position) => navigateSafely(() => {
         setIsSetlistManagerOpen(false)
         handleSelectSetlistSong(setlistId, position)
-        setActiveView('stage')
+        openStage(undefined, 'manager')
       })}
       shortcutsBlocked={activeView === 'stage' || isStagePerformanceMode}
       returnFocusTo={setlistManagerOpener} />}
@@ -1559,10 +1671,11 @@ function LibraryApp() {
           queueMode={queueMode}
           activeSetlistSongsCount={activeSetlistSongs.length}
           activeSetlistSongIndex={activeSetlistSongIndex}
+          restoredSearch={activeView === 'songbook' ? songbookReturn?.search : undefined}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
           onSelectSearchSong={(songIdx) => {
-            navigateSafely(() => { handleSelectLibrarySong(songIdx); setActiveView('stage') })
+            navigateSafely(() => { handleSelectLibrarySong(songIdx); openStage(songs[songIdx]?.id, 'search') })
           }}
           onNavigateHome={() => navigateSafely(handleNavigateHome)}
           onToggleTheme={() => setIsThemeModalOpen(true)}
@@ -1582,7 +1695,7 @@ function LibraryApp() {
           activeSetlistSongs={activeSetlistSongs}
           onSelectSetlistSong={(id, index) => navigateSafely(() => {
             handleSelectSetlistSong(id, index)
-            setActiveView('stage')
+            openStage(undefined, 'search')
           })}
           onSelectSetlist={(id) => navigateSafely(() => handleSelectSetlist(id))}
           onDirectImportOnlineSong={handleImportOnlineChordSheet}
@@ -1665,6 +1778,8 @@ function LibraryApp() {
         {activeView === 'songbook' ? (
           <SongbookHomeView onRequestTrashSetlist={setTrashSetlistId} folders={folders} trashDropIds={trashDropIds} onDismissTrashDrop={() => setTrashDropIds(null)}
             songs={songs}
+            initialListPosition={songbookReturn?.listPosition}
+            readListPositionRef={songbookPositionRef}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             activeSongIndex={activeSongIndex}
@@ -1675,7 +1790,7 @@ function LibraryApp() {
             onPreviewSong={handleSelectLibrarySong}
             onSelectSong={(songIdx) => {
               handleSelectLibrarySong(songIdx)
-              setActiveView('stage')
+              openStage(songs[songIdx]?.id)
             }}
             onSongMembershipChange={handleSongMembership}
             openSetlistId={workspaceSetlistId}
@@ -1698,7 +1813,7 @@ function LibraryApp() {
             setlists={setlists}
             onSelectSetlistSong={(setlistId, songIdx) => {
               handleSelectSetlistSong(setlistId, songIdx)
-              setActiveView('stage')
+              openStage()
             }}
             onImportSingleSetlist={handleImportSingleSetlist}
             onBulkDeleteSongs={handleBulkDeleteSongs}
@@ -1743,7 +1858,7 @@ function LibraryApp() {
             onBackToSongbook={() => setActiveView('songbook')}
           />
         ) : (
-          <StageErrorBoundary onExitToSongbook={() => setActiveView('songbook')}>
+          <StageErrorBoundary onExitToSongbook={returnFromStage}>
             <StageView
               song={currentSong}
               songs={songs}
@@ -1779,7 +1894,7 @@ function LibraryApp() {
                 isHeaderOverlayOpen ||
                 recoveryDataOpen
               }
-              onBack={() => setActiveView('songbook')}
+              onBack={returnFromStage}
               onOpenEditor={() => navigateSafely(() => setActiveView('editor'))}
               transposeOffset={currentSong.transposeOffset || 0}
               onTransposeChange={handleTransposeChange}
@@ -1876,7 +1991,7 @@ function LibraryApp() {
             setActiveSetlistId(existing.id)
             setActiveSetlistSongIndex(0)
             setQueueMode('setlist')
-            setActiveView('stage')
+            openStage()
           }}
           onClose={() => setIncomingSharedSetlist(null)}
         />
