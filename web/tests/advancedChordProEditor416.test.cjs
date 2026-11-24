@@ -52,6 +52,8 @@ const React = require('react')
 const { act } = React
 const { createRoot } = require('react-dom/client')
 const { DesktopEditor } = require('../src/components/DesktopEditor.tsx')
+const { SongLineRenderer } = require('../src/components/SongLineRenderer.tsx')
+const { parseGtarSong } = require('../src/utils/songParser.ts')
 
 const SAMPLE_SONG = {
   id: 'song-416',
@@ -90,6 +92,83 @@ const SAMPLE_SONG = {
 
 let root
 let container
+
+const PREVIEW_SONG = {
+  ...SAMPLE_SONG,
+  bpm: '120',
+  rawContent: '{title: Worship Song}\n{artist: Praise Band}\n{key: G}\nPrelude lyrics\n\n{comment: Chorus}\n[G]First refrain\n{sov}\nAn unlabelled verse\n{eov}\n{tempo: 120}\n{comment: Verse 2}\n[G]A verse\n{comment: Chorus}\n[G]Last refrain',
+}
+
+test('Stage Preview selects the last repeated header by order and unfolds its editor section before scrolling', async () => {
+  let saves = 0
+  await act(async () => root.render(React.createElement(DesktopEditor, {
+    song: PREVIEW_SONG,
+    transposeOffset: 0,
+    onUpdateSong: () => { saves++; return true },
+  })))
+  const lastSection = container.querySelector('[data-testid="chordpro-section-sec-4"]')
+  const fold = lastSection.querySelector('[data-testid="fold-btn-sec-4"]')
+  await act(async () => fold.click())
+  const headers = container.querySelectorAll('[data-stage-section]')
+  assert.deepEqual([...headers].map(header => header.textContent.trim()), ['[Chorus]', '[Verse 2]', '[Chorus]'])
+
+  const pane = lastSection.parentElement
+  pane.scrollTop = 100
+  lastSection.getBoundingClientRect = () => ({ top: 350 })
+  pane.getBoundingClientRect = () => ({ top: 50 })
+  const calls = []
+  pane.scrollTo = (options) => calls.push({ ...options, expanded: fold.getAttribute('aria-expanded') })
+  const lastHeader = headers[2].querySelector('button')
+  assert.ok(lastHeader, 'preview section has a keyboard-accessible button')
+  await act(async () => lastHeader.click())
+  assert.deepEqual(calls, [{ top: 400, behavior: 'smooth', expanded: 'true' }])
+  assert.equal(document.activeElement, document.body)
+  assert.equal(container.querySelector('[data-testid="editor-raw-textarea"]').value, PREVIEW_SONG.rawContent)
+  assert.ok(container.querySelector('[data-save-status="SAVED"]'))
+  assert.equal(saves, 0)
+})
+
+test('Raw Stage Preview scrolls to the last source marker without moving the caret or dirtying the song', async (t) => {
+  localStorage.setItem('gtar_editor_mode', 'raw')
+  let saves = 0
+  await act(async () => root.render(React.createElement(DesktopEditor, {
+    song: { ...PREVIEW_SONG, rawContent: PREVIEW_SONG.rawContent.replaceAll('\n', '\r\n') },
+    transposeOffset: 0,
+    onUpdateSong: () => { saves++; return true },
+  })))
+  const textarea = container.querySelector('[data-testid="editor-raw-textarea"]')
+  textarea.style.lineHeight = '20px'
+  textarea.style.paddingTop = '16px'
+  textarea.setSelectionRange(5, 13, 'backward')
+  const calls = []
+  textarea.scrollTo = (options) => calls.push(options)
+  t.mock.method(window, 'matchMedia', () => ({ matches: true }))
+  t.mock.method(window.HTMLElement.prototype, 'getBoundingClientRect', function () {
+    assert.equal(this.textContent, PREVIEW_SONG.rawContent.slice(0, PREVIEW_SONG.rawContent.lastIndexOf('{comment: Chorus}')) + '\u200b')
+    return { height: 300 }
+  })
+
+  const headers = container.querySelectorAll('[data-stage-section] button')
+  await act(async () => headers[headers.length - 1].click())
+  assert.deepEqual(calls, [{ top: 296, behavior: 'instant' }])
+  assert.deepEqual([textarea.selectionStart, textarea.selectionEnd, textarea.selectionDirection], [5, 13, 'backward'])
+  assert.equal(document.activeElement, document.body)
+  assert.equal(textarea.value, PREVIEW_SONG.rawContent)
+  assert.ok(container.querySelector('[data-save-status="SAVED"]'))
+  assert.equal(saves, 0)
+})
+
+test('Stage section headings keep heading semantics and have no navigation buttons by default', async () => {
+  const { lines } = parseGtarSong(PREVIEW_SONG.rawContent)
+  await act(async () => root.render(React.createElement(SongLineRenderer, { lines, fontSizePx: 14 })))
+  const headers = [...container.querySelectorAll('[data-stage-section]')]
+  assert.equal(headers.length, 3)
+  for (const header of headers) {
+    assert.equal(header.getAttribute('role'), 'heading')
+    assert.equal(header.hasAttribute('tabindex'), false)
+    assert.equal(header.querySelector('button'), null)
+  }
+})
 
 beforeEach(() => {
   container = document.getElementById('root')

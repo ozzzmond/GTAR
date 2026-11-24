@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useLayoutEffect } from 'react'
+import React, { useState, useMemo, useRef, useLayoutEffect, useImperativeHandle } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -13,6 +13,11 @@ import {
   type ChordProSection,
 } from '../utils/chordProSections'
 import { indentText } from '../utils/editorText'
+import { scrollEditorPane } from '../utils/editorSectionScroll'
+
+export interface SectionNavigation {
+  scrollToSection: (sectionId: string) => void
+}
 
 export interface ChordProCodeEditorProps {
   rawContent: string
@@ -22,6 +27,7 @@ export interface ChordProCodeEditorProps {
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
   onBeforeInput?: (e: React.FormEvent<HTMLTextAreaElement>) => void
   onSelect?: (e: React.SyntheticEvent<HTMLTextAreaElement>) => void
+  sectionNavigationRef?: React.Ref<SectionNavigation>
 }
 
 export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
@@ -32,11 +38,14 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
   onKeyDown,
   onBeforeInput,
   onSelect,
+  sectionNavigationRef,
 }) => {
   const [foldedSectionIds, setFoldedSectionIds] = useState<Set<string>>(new Set())
   const [copiedSectionId, setCopiedSectionId] = useState<string | null>(null)
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null)
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const sectionListRef = useRef<HTMLDivElement>(null)
+  const pendingScroll = useRef<string | null>(null)
   const activeSelectionRef = useRef<{
     selectionStart: number
     selectionEnd: number
@@ -72,6 +81,35 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
         Math.min(selectionEnd, section.endChar) - section.startChar)
     }
   }, [parsedSections.sections, foldedSectionIds])
+
+  const scrollToSection = (sectionId: string) => {
+    const pane = sectionListRef.current
+    const section = pane?.querySelector(`[data-testid="chordpro-section-${sectionId}"]`)
+    if (!pane || !section) return
+    scrollEditorPane(pane, pane.scrollTop + section.getBoundingClientRect().top - pane.getBoundingClientRect().top)
+  }
+
+  useImperativeHandle(sectionNavigationRef, () => ({
+    scrollToSection(sectionId) {
+      if (foldedSectionIds.has(sectionId)) {
+        pendingScroll.current = sectionId
+        setFoldedSectionIds((previous) => {
+          const next = new Set(previous)
+          next.delete(sectionId)
+          return next
+        })
+      } else {
+        scrollToSection(sectionId)
+      }
+    },
+  }), [foldedSectionIds])
+
+  useLayoutEffect(() => {
+    const sectionId = pendingScroll.current
+    if (sectionId === null || foldedSectionIds.has(sectionId)) return
+    pendingScroll.current = null
+    scrollToSection(sectionId)
+  }, [foldedSectionIds])
 
   const toggleFold = (sectionId: string) => {
     setFoldedSectionIds((prev) => {
@@ -187,7 +225,7 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
       </div>
 
       {/* Sections List Container */}
-      <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 select-text">
+      <div ref={sectionListRef} className={`flex-1 overflow-y-auto p-2 sm:p-3 space-y-2 select-text${sectionNavigationRef ? ' [container-type:size]' : ''}`}>
         {parsedSections.sections.map((section) => {
           const isFolded = foldedSectionIds.has(section.id)
           const isSelected = selectedSectionId === section.id
@@ -346,6 +384,7 @@ export const ChordProCodeEditor: React.FC<ChordProCodeEditorProps> = ({
             </div>
           )
         })}
+        {sectionNavigationRef && <div aria-hidden="true" className="h-[calc(100cqh-0.5rem)]" />}
       </div>
     </div>
   )

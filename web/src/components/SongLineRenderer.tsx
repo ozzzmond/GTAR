@@ -22,6 +22,7 @@ export interface SongLineRendererProps {
   onChordClick?: (chord: string, targetEl?: HTMLElement) => void
   onChordHover?: (chord: string, targetEl: HTMLElement) => void
   onChordLeave?: (chord: string) => void
+  onSectionClick?: (lineIndex: number) => void
   chordScale?: number
   fontWeight?: StageFontWeight
   lineSpacing?: StageLineSpacing
@@ -273,6 +274,7 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
   onChordClick,
   onChordHover,
   onChordLeave,
+  onSectionClick,
   chordScale = 1.0,
   fontWeight = 'regular',
   lineSpacing = 'normal',
@@ -342,7 +344,16 @@ export const SongLineRenderer: React.FC<SongLineRendererProps> = ({
                   whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', breakAfter: 'avoid',
                   overflowAnchor: 'none',
                 }}>
-                [{line.title}]
+                {onSectionClick ? (
+                  <button
+                    type="button"
+                    className="block w-full cursor-pointer text-left min-h-11 rounded-xl sm:min-h-0"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => onSectionClick(idx)}
+                  >
+                    [{line.title}]
+                  </button>
+                ) : `[${line.title}]`}
               </div>
             )
 
