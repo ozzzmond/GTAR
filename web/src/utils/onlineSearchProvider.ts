@@ -3,14 +3,19 @@
  * Decouples GTAR search consumers from provider-specific endpoints and parsing.
  */
 
+import {
+  GUITARSONGS_LIVE_ACCESS_PERMITTED,
+  validateGuitarSongsSongUrl,
+} from './guitarSongsCore'
+
 export interface OnlineChordResult {
   id: string | number
   songName: string
   artistName: string
   type: string // "Chords", "Tab", etc.
-  version: number
-  votes: number
-  rating: number
+  version?: number
+  votes?: number
+  rating?: number
   tabUrl: string
   offlineExample?: boolean
   tonality?: string
@@ -464,6 +469,136 @@ export class UltimateGuitarProvider implements OnlineSearchProvider {
   }
 }
 
+/**
+ * GuitarSongs.club Online Search Provider
+ * Gated behind GUITARSONGS_LIVE_ACCESS_PERMITTED until automated access is verified.
+ */
+export class GuitarSongsProvider implements OnlineSearchProvider {
+  readonly id = 'guitarsongs'
+  readonly name = 'GuitarSongs.club'
+  private readonly permitted: boolean
+
+  constructor(options: { permitted?: boolean } = {}) {
+    this.permitted = options.permitted ?? GUITARSONGS_LIVE_ACCESS_PERMITTED
+  }
+
+  async search(query: string): Promise<OnlineChordResult[]> {
+    if (!this.permitted) {
+      throw new OnlineSearchError('GuitarSongs.club automated access is not permitted yet', {
+        status: 503,
+        code: 'DISABLED',
+      })
+    }
+
+    const trimmed = query.trim()
+    if (!trimmed) return []
+
+    if (!isOnline()) {
+      return []
+    }
+
+    try {
+      const res = await fetch(`/api/gs-search?q=${encodeURIComponent(trimmed)}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && Array.isArray(data.results)) {
+          return data.results
+        }
+        throw new OnlineSearchError('Unable to parse online search results', {
+          status: 502,
+          code: 'PARSE_ERROR',
+        })
+      }
+
+      if (res.status === 400) {
+        throw new OnlineSearchError('Invalid search query', { status: 400, code: 'INVALID_QUERY' })
+      }
+      if (res.status === 503) {
+        const body = await res.json().catch(() => null)
+        if (body?.error === 'ONLINE_SOURCES_DISABLED') {
+          throw new OnlineSearchError('Online song sources are not available on this site.', {
+            status: 503,
+            code: 'DISABLED',
+          })
+        }
+        throw new OnlineSearchError('GuitarSongs.club search is currently unavailable', {
+          status: 503,
+          code: 'DISABLED',
+        })
+      }
+      if (res.status === 403) {
+        throw new OnlineSearchError('Online search temporarily restricted', {
+          status: 403,
+          code: 'RESTRICTED',
+        })
+      }
+      if (res.status === 429) {
+        throw new OnlineSearchError('Search rate limit reached — please wait a moment', {
+          status: 429,
+          code: 'RATE_LIMITED',
+        })
+      }
+      if (res.status === 502) {
+        throw new OnlineSearchError('Unable to parse online search results', {
+          status: 502,
+          code: 'PARSE_ERROR',
+        })
+      }
+      if (res.status === 504) {
+        throw new OnlineSearchError('Online search timed out — please try again', {
+          status: 504,
+          code: 'TIMEOUT',
+        })
+      }
+      throw new OnlineSearchError(`Search error (${res.status})`, { status: res.status, code: 'UNKNOWN' })
+    } catch (err) {
+      if (err instanceof OnlineSearchError) {
+        throw err
+      }
+      console.warn('[OnlineSearch] GuitarSongs network or backend unreachable:', err)
+      throw new OnlineSearchError('Network error — unable to reach search service', {
+        code: 'NETWORK_ERROR',
+      })
+    }
+  }
+
+  async fetchSheet(result: OnlineChordResult): Promise<FetchedChordSheet> {
+    if (!this.permitted) {
+      throw new Error('GuitarSongs.club automated access is not permitted yet')
+    }
+
+    const urlCheck = validateGuitarSongsSongUrl(result.tabUrl)
+    if (!urlCheck.valid || !urlCheck.parsedUrl) {
+      throw new Error(urlCheck.error || 'Invalid GuitarSongs.club song URL')
+    }
+
+    if (!isOnline()) {
+      throw new Error(
+        `Could not extract chord sheet for "${result.songName}": Device is currently offline. Please connect to the internet.`
+      )
+    }
+
+    try {
+      const res = await fetch(`/api/gs-tab?url=${encodeURIComponent(urlCheck.parsedUrl.toString())}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && data.sheet && data.sheet.rawContent) {
+          return data.sheet
+        }
+        throw new Error(data.error || 'Invalid chord sheet payload received')
+      }
+      const errData = await res.json().catch(() => null)
+      const errorMsg = errData?.error || `Server responded with status ${res.status}`
+      throw new Error(errorMsg)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      throw new Error(`Could not extract chord sheet for "${result.songName}": ${message}`, {
+        cause: err,
+      })
+    }
+  }
+}
+
 const DEFAULT_PROVIDER_ID = 'ultimate-guitar'
 
 /**
@@ -510,7 +645,9 @@ class SearchProviderRegistry {
   reset(): void {
     this.providers.clear()
     const defaultProvider = new UltimateGuitarProvider()
+    const guitarSongsProvider = new GuitarSongsProvider()
     this.providers.set(defaultProvider.id, defaultProvider)
+    this.providers.set(guitarSongsProvider.id, guitarSongsProvider)
     this.activeId = DEFAULT_PROVIDER_ID
   }
 

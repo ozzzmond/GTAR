@@ -255,6 +255,7 @@ New or renamed tests await a human choice of primary category.
 - [extensionHost.test.cjs](extensionHost.test.cjs)
 - [foldersTagsShortcuts.test.cjs](foldersTagsShortcuts.test.cjs)
 - [gtar1Export.test.cjs](gtar1Export.test.cjs)
+- [guitarSongs632.test.cjs](guitarSongs632.test.cjs)
 - [layoutDirective332.test.cjs](layoutDirective332.test.cjs)
 - [libraryStorageSeam.test.cjs](libraryStorageSeam.test.cjs)
 - [libraryStore.test.cjs](libraryStore.test.cjs)
