@@ -13,6 +13,7 @@ import {
   type OnlineSearchProvider,
   OnlineSearchError,
   UltimateGuitarProvider,
+  GuitarSongsProvider,
   getActiveSearchProvider,
   setActiveSearchProvider,
   registerSearchProvider,
@@ -22,7 +23,11 @@ import {
   isOnline,
   CURATED_CATALOG,
 } from './onlineSearchProvider'
-import { loadOnlineSourceSettings, type OnlineSourceSettings } from './onlineSourceSettings'
+import {
+  isProviderPermitted,
+  loadOnlineSourceSettings,
+  type OnlineSourceSettings,
+} from './onlineSourceSettings'
 
 export {
   type OnlineChordResult,
@@ -33,6 +38,7 @@ export {
   type OnlineSearchProvider,
   OnlineSearchError,
   UltimateGuitarProvider,
+  GuitarSongsProvider,
   getActiveSearchProvider,
   setActiveSearchProvider,
   registerSearchProvider,
@@ -76,20 +82,21 @@ export interface SourceSearchOutcome {
 }
 
 /**
- * Enabled integrated providers in priority order. Shortcuts are never searchable and
- * entries whose provider is not registered are skipped. Primary mode keeps only the first.
+ * Enabled and permitted integrated providers.
+ * Unpermitted or disabled providers are skipped.
  */
 export function getSearchableProviders(
   settings: OnlineSourceSettings,
   lookup: (id: string) => OnlineSearchProvider | undefined = getSearchProviderById,
+  permitted: (id: string) => boolean = isProviderPermitted,
 ): OnlineSearchProvider[] {
   const providers: OnlineSearchProvider[] = []
   for (const source of settings.sources) {
-    if (source.kind !== 'provider' || !source.enabled) continue
+    if (source.kind !== 'provider' || !source.enabled || !permitted(source.providerId)) continue
     const provider = lookup(source.providerId)
     if (provider && !providers.includes(provider)) providers.push(provider)
   }
-  return settings.mode === 'primary' ? providers.slice(0, 1) : providers
+  return providers
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -110,9 +117,13 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 export async function searchConfiguredSources(
   query: string,
   settings: OnlineSourceSettings = loadOnlineSourceSettings(),
-  options: { lookup?: (id: string) => OnlineSearchProvider | undefined; timeoutMs?: number } = {},
+  options: {
+    lookup?: (id: string) => OnlineSearchProvider | undefined
+    permitted?: (id: string) => boolean
+    timeoutMs?: number
+  } = {},
 ): Promise<SourceSearchOutcome> {
-  const providers = getSearchableProviders(settings, options.lookup)
+  const providers = getSearchableProviders(settings, options.lookup, options.permitted)
   const timeoutMs = options.timeoutMs ?? PROVIDER_SEARCH_TIMEOUT_MS
   const settled = await Promise.allSettled(
     providers.map(provider => withTimeout(Promise.resolve().then(() => provider.search(query)), timeoutMs)),

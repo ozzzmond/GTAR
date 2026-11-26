@@ -11,6 +11,7 @@ import { fetchOnlineChordSheet } from '../utils/onlineSearch'
 import { SongLineRenderer } from './SongLineRenderer'
 import { parseGtarSong } from '../utils/songParser'
 import { validateTabUrl } from '../utils/ugCore'
+import { validateGuitarSongsSongUrl } from '../utils/guitarSongsCore'
 
 interface ChordPreviewModalProps {
   isOpen: boolean
@@ -65,8 +66,16 @@ export const ChordPreviewModal: React.FC<ChordPreviewModalProps> = ({
   if (!isOpen || !result) return null
 
   const parsed = sheet ? parseGtarSong(sheet.rawContent, 0) : null
-  const tabValidation = result?.tabUrl ? validateTabUrl(result.tabUrl) : null
+  const tabValidation = result?.tabUrl
+    ? result.providerId === 'guitarsongs'
+      ? validateGuitarSongsSongUrl(result.tabUrl)
+      : validateTabUrl(result.tabUrl)
+    : null
   const safeTabUrl = tabValidation?.valid && tabValidation.parsedUrl ? tabValidation.parsedUrl.toString() : null
+  const hasVersion = typeof result.version === 'number' && Number.isFinite(result.version) && result.version > 0
+  const hasRating = typeof result.rating === 'number' && Number.isFinite(result.rating) && result.rating > 0
+  const hasVotes = typeof result.votes === 'number' && Number.isFinite(result.votes) && result.votes > 0
+  const badgeParts = [result.type?.trim(), hasVersion ? `v${result.version}` : ''].filter(Boolean)
 
   const handleOpenExternal = () => {
     if (safeTabUrl) {
@@ -97,15 +106,23 @@ export const ChordPreviewModal: React.FC<ChordPreviewModalProps> = ({
                 <h2 className="text-base sm:text-lg font-black text-app-heading truncate">
                   {result.songName}
                 </h2>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-app-accent/20 text-app-accent font-bold border border-app-accent/30 shrink-0">
-                  {result.type} v{result.version}
-                </span>
+                {badgeParts.length > 0 && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-app-accent/20 text-app-accent font-bold border border-app-accent/30 shrink-0">
+                    {badgeParts.join(' ')}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2 text-xs text-app-muted mt-0.5 font-medium">
                 <span className="truncate">{result.artistName}</span>
-                <span>•</span>
-                <span className="text-app-accent font-bold">★ {result.rating.toFixed(1)}</span>
-                <span className="text-[11px]">({result.votes.toLocaleString()} votes)</span>
+                {hasRating && (
+                  <>
+                    <span>•</span>
+                    <span className="text-app-accent font-bold">★ {result.rating!.toFixed(1)}</span>
+                  </>
+                )}
+                {hasVotes && (
+                  <span className="text-[11px]">({result.votes!.toLocaleString()} votes)</span>
+                )}
               </div>
             </div>
           </div>
@@ -130,7 +147,7 @@ export const ChordPreviewModal: React.FC<ChordPreviewModalProps> = ({
                   Fetching Online Chord Sheet...
                 </p>
                 <p className="text-xs text-app-muted mt-1">
-                  Extracting lyrics, chords, and key tonality from Ultimate-Guitar
+                  Extracting lyrics and chords from {result.providerName || 'online source'}
                 </p>
               </div>
             </div>

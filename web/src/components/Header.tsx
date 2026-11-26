@@ -54,7 +54,7 @@ import {
   type FetchedChordSheet,
 } from '../utils/onlineSearch'
 import { setOnlineSourcesEnabled, useOnlineSourcesEnabled } from '../utils/onlineSources'
-import { getSearchLinks, useOnlineSourceSettings } from '../utils/onlineSourceSettings'
+import { useOnlineSourceSettings } from '../utils/onlineSourceSettings'
 import { ChordPreviewModal } from './ChordPreviewModal'
 import { DebugLogsModal } from './DebugLogsModal'
 import { OnlineSourcesDialog, OnlineSourcesRow } from './OnlineSourcesRow'
@@ -621,7 +621,6 @@ export const Header: React.FC<HeaderProps> = ({
       isSearchingOnline={isSearchingOnline}
       isOffline={isOffline}
       onlineError={onlineError}
-      searchLinks={onlineSourcesEnabled ? getSearchLinks(onlineSourceSettings, searchQuery) : []}
       onSelectSong={(originalIdx) => {
         dismissResults()
         onSelectSearchSong?.(originalIdx)

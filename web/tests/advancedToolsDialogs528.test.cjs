@@ -102,15 +102,15 @@ test('Online Song Sources: launcher closes the dropdown and opens an independent
     assertLayout(panel, 'Online Song Sources')
     assert.equal(document.activeElement.getAttribute('aria-label'), 'Close', 'focus moves into the dialog')
 
-    // Interactive after the dropdown is gone: mode, provider enable, add, restore defaults.
-    const radios = [...panel.querySelectorAll('[role="radio"]')]
-    assert.deepEqual(radios.map(radio => radio.textContent), ['All Sources', 'Primary Only'])
-    await click(radios[1])
-    assert.equal(JSON.parse(localStorage.getItem(settings.ONLINE_SOURCE_SETTINGS_KEY)).mode, 'primary')
+    // Interactive after the dropdown is gone: two fixed providers and restore defaults (#632).
+    assert.equal(panel.querySelectorAll('[role="radio"]').length, 0)
+    assert.deepEqual(
+      [...panel.querySelectorAll('[data-testid^="manage-source-"]')].map(el => el.getAttribute('data-testid')),
+      ['manage-source-ultimate-guitar', 'manage-source-guitarsongs']
+    )
     await click(panel.querySelector('input[aria-label="Enable Ultimate Guitar"]'))
     assert.equal(JSON.parse(localStorage.getItem(settings.ONLINE_SOURCE_SETTINGS_KEY)).sources[0].enabled, false)
-    await click([...panel.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === 'Add WorshipChords'))
-    assert.ok(panel.querySelector('[data-testid="manage-source-worshipchords"]'))
+    assert.equal(panel.querySelector('input[aria-label="Enable GuitarSongs.club"]').disabled, true)
     const footer = panel.querySelector('[data-app-modal="footer"]')
     await click([...footer.querySelectorAll('button')].find(button => button.textContent.trim() === 'Restore Defaults'))
     await click([...footer.querySelectorAll('button')].find(button => button.textContent.trim() === 'Restore defaults'))
