@@ -86,27 +86,27 @@ test('#632 migration: preserves UG enabled/disabled state and discards WorshipCh
   ])
 })
 
-test('#632 migration never silently enables unpermitted GuitarSongs.club even if stored true', () => {
-  const tampered = JSON.stringify({
+test('#632 migration preserves explicit permitted GuitarSongs.club preference without enabling missing ones', () => {
+  const explicit = JSON.stringify({
     version: 1,
     sources: [
       { kind: 'provider', id: 'ultimate-guitar', name: 'Ultimate Guitar', providerId: 'ultimate-guitar', enabled: true },
       { kind: 'provider', id: 'guitarsongs', name: 'GuitarSongs.club', providerId: 'guitarsongs', enabled: true },
     ],
   })
-  const parsed = settings.parseStoredSettings(tampered)
+  const parsed = settings.parseStoredSettings(explicit)
   assert.deepEqual(parsed.sources.map(s => [s.id, s.enabled]), [
     ['ultimate-guitar', true],
-    ['guitarsongs', false],
+    ['guitarsongs', true],
   ])
 })
 
-test('#632 setSourceEnabled and restoreDefaultSettings respect permission gates', () => {
+test('#632 setSourceEnabled and restoreDefaultSettings toggle permitted providers cleanly', () => {
   let current = settings.createDefaultSettings()
   current = settings.setSourceEnabled(current, 'ultimate-guitar', false)
   assert.equal(current.sources[0].enabled, false)
   current = settings.setSourceEnabled(current, 'guitarsongs', true)
-  assert.equal(current.sources[1].enabled, false, 'unpermitted provider cannot be enabled')
+  assert.equal(current.sources[1].enabled, true)
   const restored = settings.restoreDefaultSettings()
   assert.deepEqual(restored.sources.map(s => [s.id, s.enabled]), [
     ['ultimate-guitar', true],

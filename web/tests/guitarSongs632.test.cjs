@@ -147,8 +147,8 @@ test('#632 fetchGuitarSongs enforces allowlist, manual redirect validation and c
   }
 })
 
-test('#632 GuitarSongs endpoints respect UG_PROXY_MODE=disabled and live permission gate', async () => {
-  assert.equal(gsCore.GUITARSONGS_LIVE_ACCESS_PERMITTED, false)
+test('#632 GuitarSongs endpoints respect UG_PROXY_MODE=disabled and input validation when permitted', async () => {
+  assert.equal(gsCore.GUITARSONGS_LIVE_ACCESS_PERMITTED, true)
   _resetUgGateForTesting()
   for (const endpoint of [gsSearch, gsTab]) {
     const off = await endpoint.onRequestGet({
@@ -157,14 +157,19 @@ test('#632 GuitarSongs endpoints respect UG_PROXY_MODE=disabled and live permiss
     })
     assert.equal(off.status, 503)
     assert.equal((await off.json()).error, 'ONLINE_SOURCES_DISABLED')
-
-    const gated = await endpoint.onRequestGet({
-      request: new Request('https://gtar.local/api/gs-search?q=beatles'),
-      env: {},
-    })
-    assert.equal(gated.status, 503)
-    assert.equal((await gated.json()).error, 'GUITARSONGS_LIVE_ACCESS_DISABLED')
   }
+  const emptySearch = await gsSearch.onRequestGet({
+    request: new Request('https://gtar.local/api/gs-search?q='),
+    env: {},
+  })
+  assert.equal(emptySearch.status, 200)
+  assert.deepEqual((await emptySearch.json()).results, [])
+
+  const badTab = await gsTab.onRequestGet({
+    request: new Request('https://gtar.local/api/gs-tab?url=' + encodeURIComponent('https://evil.example.com/song/1')),
+    env: {},
+  })
+  assert.equal(badTab.status, 403)
   _resetUgGateForTesting()
 })
 
@@ -174,7 +179,7 @@ test('#632 GuitarSongsProvider blocks live calls when unpermitted and works agai
   try {
     global.fetch = async () => { fetchCalled = true; return new Response('{}', { status: 200 }) }
 
-    const gatedProvider = new GuitarSongsProvider()
+    const gatedProvider = new GuitarSongsProvider({ permitted: false })
     await assert.rejects(() => gatedProvider.search('beatles'), err => err instanceof OnlineSearchError && err.code === 'DISABLED')
     await assert.rejects(() => gatedProvider.fetchSheet({
       id: 'guitarsongs:127565', songName: 'Hello, Goodbye', artistName: 'The Beatles', type: 'Chords',
@@ -182,7 +187,7 @@ test('#632 GuitarSongsProvider blocks live calls when unpermitted and works agai
     }), /not permitted/)
     assert.equal(fetchCalled, false)
 
-    const permittedProvider = new GuitarSongsProvider({ permitted: true })
+    const permittedProvider = new GuitarSongsProvider()
     global.fetch = async (url) => {
       const u = String(url)
       if (u.startsWith('/api/gs-search')) {

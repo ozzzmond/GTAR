@@ -18,9 +18,10 @@ export const MAX_GUITARSONGS_HTML_BYTES = 1024 * 1024 // 1 MiB
 
 /**
  * Live automated-access permission gate for GuitarSongs.club.
- * Keep false until terms/authorization for automated access are verified.
+ * Enabled by owner authorization for preview testing on PR #633;
+ * upstream 403 / Cf-Mitigated challenges and UG_PROXY_MODE=disabled remain fail-closed.
  */
-export const GUITARSONGS_LIVE_ACCESS_PERMITTED = false
+export const GUITARSONGS_LIVE_ACCESS_PERMITTED = true
 
 export interface GuitarSongsSearchResult {
   id: string

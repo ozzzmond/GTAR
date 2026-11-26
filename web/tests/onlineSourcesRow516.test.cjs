@@ -90,16 +90,18 @@ test('#632 dialog renders exactly two fixed providers, no mode radios, no add/or
     assert.equal(ugCheckbox.checked, true)
     assert.equal(ugCheckbox.disabled, false)
     assert.equal(gsCheckbox.checked, false)
-    assert.equal(gsCheckbox.disabled, true)
-    assert.match(q('[data-testid="provider-unavailable-guitarsongs"]').textContent, /Unavailable/)
+    assert.equal(gsCheckbox.disabled, false)
+    assert.equal(q('[data-testid="provider-unavailable-guitarsongs"]'), null)
   } finally { await act(async () => root.unmount()) }
 })
 
-test('#632 toggling Ultimate Guitar persists and Restore Defaults resets with confirm step', async () => {
+test('#632 toggling providers persists and Restore Defaults resets with confirm step', async () => {
   const { root } = await mount()
   try {
     await click(byLabel('Enable Ultimate Guitar'))
     assert.equal(stored().sources[0].enabled, false)
+    await click(byLabel('Enable GuitarSongs.club'))
+    assert.equal(stored().sources[1].enabled, true)
     await click(buttonText('Restore Defaults'))
     assert.ok(q('[role="group"][aria-label="Confirm restore defaults"]'))
     await click(buttonText('Cancel'))
