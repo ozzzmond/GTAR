@@ -363,6 +363,10 @@ Ay papunta na sa dulo`,
   },
 ]
 
+export function isOnlineProvidersDisabled(): boolean {
+  return import.meta.env.VITE_GTAR1_DEMO === '1' || import.meta.env.VITE_ONLINE_PROVIDERS_DISABLED === '1'
+}
+
 /**
  * Ultimate Guitar Online Search Provider
  * Implements OnlineSearchProvider targeting GTAR backend scraper endpoints.
@@ -370,8 +374,19 @@ Ay papunta na sa dulo`,
 export class UltimateGuitarProvider implements OnlineSearchProvider {
   readonly id = 'ultimate-guitar'
   readonly name = 'Ultimate Guitar'
+  private readonly permitted: boolean
+
+  constructor(options: { permitted?: boolean } = {}) {
+    this.permitted = options.permitted ?? !isOnlineProvidersDisabled()
+  }
 
   async search(query: string): Promise<OnlineChordResult[]> {
+    if (!this.permitted) {
+      throw new OnlineSearchError('Online song sources are not available on this site.', {
+        status: 503,
+        code: 'DISABLED',
+      })
+    }
     const trimmed = query.trim()
     if (!trimmed) return []
 
@@ -434,6 +449,12 @@ export class UltimateGuitarProvider implements OnlineSearchProvider {
   }
 
   async fetchSheet(result: OnlineChordResult): Promise<FetchedChordSheet> {
+    if (!this.permitted) {
+      throw new OnlineSearchError('Online song sources are not available on this site.', {
+        status: 503,
+        code: 'DISABLED',
+      })
+    }
     if (result.offlineExample) {
       const catalog = CURATED_CATALOG.find(cat => {
         const sample = cat.results[0]
@@ -479,7 +500,7 @@ export class GuitarSongsProvider implements OnlineSearchProvider {
   private readonly permitted: boolean
 
   constructor(options: { permitted?: boolean } = {}) {
-    this.permitted = options.permitted ?? GUITARSONGS_LIVE_ACCESS_PERMITTED
+    this.permitted = options.permitted ?? (GUITARSONGS_LIVE_ACCESS_PERMITTED && !isOnlineProvidersDisabled())
   }
 
   async search(query: string): Promise<OnlineChordResult[]> {

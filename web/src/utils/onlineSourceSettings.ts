@@ -42,7 +42,18 @@ export interface ProviderAvailability {
   reason?: string
 }
 
-export function getProviderAvailability(id: FixedProviderId | string): ProviderAvailability {
+export function isOnlineProvidersDisabled(): boolean {
+  return import.meta.env.VITE_GTAR1_DEMO === '1' || import.meta.env.VITE_ONLINE_PROVIDERS_DISABLED === '1'
+}
+
+export function getProviderAvailability(
+  id: FixedProviderId | string,
+  options: { environmentDisabled?: boolean } = {}
+): ProviderAvailability {
+  const environmentDisabled = options.environmentDisabled ?? isOnlineProvidersDisabled()
+  if (environmentDisabled) {
+    return { permitted: false, reason: 'Online song sources are disabled in this environment' }
+  }
   if (id === 'ultimate-guitar') {
     return { permitted: true }
   }

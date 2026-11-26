@@ -36,6 +36,7 @@ const VITE_SHIM = [
   "  ? { version: gtar1Release.version, sourceTag: gtar1Release.sourceTag, sha: gtar1Release.sourceSha }",
   '  : null',
   'const gtar1IsDemo = process.env.CF_PAGES_BRANCH === \'demo\'',
+  'const gtar1OnlineProvidersDisabled = process.env.CF_PAGES_BRANCH !== \'main\'',
   'type Gtar1DevIdentity = { tag?: string; version?: string; tagStatus?: string; shortSha?: string; deploymentId?: string } | null',
   'const resolveDevIdentity = (..._args: unknown[]): Gtar1DevIdentity => null',
   'const getCommittedDevVersion = (..._args: unknown[]): string => gtar1Release.version',
@@ -150,7 +151,10 @@ function patchDefaultLibrary(source) {
 
 function patchViteDemoFlag(source) {
   once('vite.config.ts', source, VITE_DEFINE_ANCHOR)
-  return source.replace(VITE_DEFINE_ANCHOR, `${VITE_DEFINE_ANCHOR}\n      'import.meta.env.VITE_GTAR1_DEMO': JSON.stringify(gtar1IsDemo ? '1' : ''),`)
+  return source.replace(
+    VITE_DEFINE_ANCHOR,
+    `${VITE_DEFINE_ANCHOR}\n      'import.meta.env.VITE_GTAR1_DEMO': JSON.stringify(gtar1IsDemo ? '1' : ''),\n      'import.meta.env.VITE_ONLINE_PROVIDERS_DISABLED': JSON.stringify(gtar1OnlineProvidersDisabled ? '1' : ''),`
+  )
 }
 
 function applyIcons(out, included) {
@@ -185,7 +189,7 @@ function patchWrangler(text, ids) {
   for (const key of ['prod', 'dev']) if (!UUID.test(ids?.[key] || '')) throw new Error(`--d1-${key}-id must be a UUID`)
   const json = JSON.parse(text) // plain JSON only; a JSONC comment makes this fail closed
   const sourceIds = []
-  const fix = node => {
+  const fix = (node, envName) => {
     if (Array.isArray(node.d1_databases)) {
       node.d1_databases = node.d1_databases.map(db => {
         const rename = D1_RENAMES[db.database_name]
@@ -197,12 +201,12 @@ function patchWrangler(text, ids) {
     delete node.services
     delete node.durable_objects
     if (node.vars) delete node.vars.CAST2_ORIGIN
-    // GTAR1 ships no online song source: the UG proxy kill switch is forced on in every environment (#453).
-    node.vars = { ...node.vars, UG_PROXY_MODE: 'disabled' }
+    // GTAR1 Production (main) enables online song providers; Demo (preview) and unknown/root environments fail closed (#632).
+    node.vars = { ...node.vars, UG_PROXY_MODE: envName === 'production' ? 'enabled' : 'disabled' }
   }
   json.name = 'gtar1'
-  fix(json)
-  for (const env of Object.values(json.env || {})) fix(env)
+  fix(json, 'root')
+  for (const [envName, env] of Object.entries(json.env || {})) fix(env, envName)
   const out = JSON.stringify(json, null, 2) + '\n'
   for (const bad of [...sourceIds, 'gtar-db-', 'gtar-stage-cast2', 'gtar-web', 'gtar-band-sync']) {
     if (bad && out.includes(bad)) throw new Error(`GTAR identifier ${bad} still present in wrangler.jsonc`)
