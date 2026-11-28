@@ -40,6 +40,7 @@ for (const ext of ['.ts', '.tsx']) {
 
 const React = require('react')
 const ReactDOMServer = require('react-dom/server')
+const { JSDOM } = require('jsdom')
 
 const { StageOptionsSheet } = require('../src/components/StageOptionsSheet.tsx')
 const { StageView } = require('../src/components/StageView.tsx')
@@ -236,6 +237,33 @@ test('STAGE_PREVIEW_GTAR1: Song format renders GTAR1 song view with metadata chi
     assert.ok(html.includes('Enter fullscreen'), 'Top row must contain Fullscreen button')
   } finally {
     global.localStorage = prevStorage
+  }
+})
+
+test('GH645: Stage Key control keeps the signed offset and accessible name with a mobile-hidden prefix', () => {
+  const song = { ...mockSong, originalKey: 'G' }
+  for (const [transposeOffset, performanceKey, signedOffset] of [
+    [0, 'G', ''],
+    [-5, 'D', '-5'],
+    [1, 'Ab', '+1'],
+  ]) {
+    const html = ReactDOMServer.renderToStaticMarkup(React.createElement(StageView, {
+      song,
+      songs: [song],
+      activeSongIndex: 0,
+      onSelectSongIndex: () => {},
+      transposeOffset,
+      onTransposeChange: () => {},
+    }))
+    const toolbar = JSDOM.fragment(html).querySelector('[aria-label="Stage controls"]')
+    const keyButton = toolbar.querySelector(`button[aria-label="Key: ${performanceKey}. Click to transpose."]`)
+    assert.ok(keyButton, 'Key control retains its accessible name')
+    const [prefix, key, offset] = keyButton.children
+    assert.equal(prefix.textContent, 'Key:')
+    assert.ok(prefix.classList.contains('hidden') && prefix.classList.contains('sm:inline'))
+    assert.equal(key.textContent, performanceKey)
+    assert.equal(offset?.textContent || '', signedOffset)
+    assert.equal(keyButton.getAttribute('aria-description'), signedOffset ? `Transpose: ${signedOffset} semitones` : null)
   }
 })
 

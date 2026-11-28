@@ -137,9 +137,10 @@ export const SetlistManagerHelp: React.FC<MenuHelpProps & { showFolder?: boolean
   />
 )
 
-export const StagePreviewHelp: React.FC<MenuHelpProps> = (props) => (
+export const StagePreviewHelp: React.FC<MenuHelpProps> = ({ className = '', ...props }) => (
   <ContextualHelp
     {...props}
+    className={`max-sm:shrink-0 max-sm:[&>button]:size-11 max-sm:[&>button]:rounded-xl max-sm:[&>button]:before:hidden max-sm:[&>button>svg]:size-5 ${className}`}
     id="stage-preview-help"
     title="Stage Preview"
     buttonTestId="stage-preview-help-button"

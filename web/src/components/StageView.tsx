@@ -1652,7 +1652,6 @@ export const StageView: React.FC<StageViewProps> = ({
     if (content.ok) void bandHost.publishBandStage(content.value)
   }, [bandHost, bandSyncEnabled, bandRemote, song, transposeOffset, effectiveKey, isTwoColumn, notation, fontSizePx, fontStyle])
   const offsetStr = formatTransposeOffset(keyContext.displayOffset)
-  void offsetStr
 
   // Two-column split calculation matching splitSongLinesForColumns in Android SongViewerScreen.kt
   const [col1Lines, col2Lines] = isTwoColumn
@@ -1840,6 +1839,8 @@ export const StageView: React.FC<StageViewProps> = ({
     setIsSpeedPromptOpen(false)
   }
 
+  const toolbarButtonClass = 'ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-1 sm:px-2.5 rounded-xl sm:rounded-lg border text-xs font-semibold flex items-center justify-center gap-1 sm:gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer max-sm:[&>svg]:size-5'
+
   if (bandSyncEnabled && bandRemote) return <BandSyncRemoteView view={bandRemote} />
 
   return (
@@ -2020,8 +2021,10 @@ export const StageView: React.FC<StageViewProps> = ({
       {/*    Hidden entirely in performance mode — replaced by floating HUD.  */}
       {/* =================================================================== */}
       <div
-        className={`border-b border-app-border bg-app-surface px-4 sm:px-6 py-1.5 flex flex-wrap items-center justify-between gap-2.5 z-20 shadow-md transition-all duration-300 ${
-          inPerformanceMode ? 'opacity-0 pointer-events-none h-0 py-0 overflow-hidden border-0' : 'opacity-100'
+        role="group"
+        aria-label="Stage controls"
+        className={`border-b border-app-border bg-app-surface px-1 sm:px-6 py-1.5 flex sm:flex-wrap items-center justify-between gap-1 sm:gap-2.5 z-20 shadow-md transition-all duration-300 ${
+          inPerformanceMode ? 'opacity-0 pointer-events-none h-0 py-0 overflow-hidden border-0' : 'stage-toolbar-scroll opacity-100'
         }`}
       >
         {/* Left Side: Back */}
@@ -2031,38 +2034,38 @@ export const StageView: React.FC<StageViewProps> = ({
             onClick={() => { if (onBack) onBack(); else navigateBack() }}
             aria-label="Back"
             data-testid="toolbar-back"
-            className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-xl sm:rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+            className={toolbarButtonClass}
           >
-            <ArrowLeft className="w-5 h-5 sm:w-4 sm:h-4 shrink-0" />
+            <ArrowLeft className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Back</span>
           </button>
         </div>
 
         {/* Right Side: Editor, Metronome/Tuner (when switched on), Key, Chords/Numbers, speed, Stage Options, Cast, Help, Fullscreen toggle */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0 sm:flex-wrap justify-end">
           <button
             type="button"
             onClick={onOpenEditor}
             aria-label="Editor"
-            className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+            className={toolbarButtonClass}
           >
             <FileEdit className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Editor</span>
           </button>
-          <StageToolButtons hidden={inPerformanceMode} buttonClass="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer" />
+          <StageToolButtons hidden={inPerformanceMode} buttonClass={toolbarButtonClass} />
           {/* Key Chip (Tapping opens KeyPickerModal) */}
           <button
             type="button"
             onClick={() => setIsKeyPickerOpen(true)}
             aria-label={`Key: ${effectivePerformanceKey || 'Not Set'}. Click to transpose.`}
-            className="ui-button min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 bg-app-base border-app-border text-app-text hover:border-app-action cursor-pointer"
+            aria-description={keyContext.displayOffset !== 0 ? `Transpose: ${offsetStr} semitones` : undefined}
+            className={toolbarButtonClass}
           >
-            <span className="text-app-muted">Key:</span>
+            <span className="hidden sm:inline text-app-muted">Key:</span>
             <span className="font-bold text-app-accent">{effectivePerformanceKey || '—'}</span>
-            <span className="sr-only">Transpose: {offsetStr}</span>
             {keyContext.displayOffset !== 0 && (
-              <span className="text-[10px] font-mono text-app-action">
-                {keyContext.displayOffset > 0 ? `+${keyContext.displayOffset}` : keyContext.displayOffset}
+              <span className="text-xs sm:text-[10px] font-mono text-app-action">
+                {offsetStr}
               </span>
             )}
           </button>
@@ -2122,16 +2125,16 @@ export const StageView: React.FC<StageViewProps> = ({
             type="button"
             onClick={handleToggleAutoScroll}
             aria-label={isAutoScrolling ? 'Pause autoscroll' : 'Start autoscroll'}
-            className={`ui-button min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 px-2.5 rounded-lg border flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors ${
+            className={`ui-button min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 px-1 sm:px-2.5 rounded-xl sm:rounded-lg border flex items-center justify-center gap-1 sm:gap-1.5 shrink-0 cursor-pointer transition-colors ${
               isAutoScrolling
                 ? 'bg-status-error/15 border-status-error text-status-error hover:bg-status-error/25 shadow-sm'
                 : 'bg-app-button hover:brightness-110 border-app-border text-app-button-text'
             }`}
           >
             {isAutoScrolling ? (
-              <Pause className="w-4 h-4 fill-current" />
+              <Pause className="w-5 h-5 sm:w-4 sm:h-4 fill-current" />
             ) : (
-              <Gauge className="w-4 h-4" />
+              <Gauge className="w-5 h-5 sm:w-4 sm:h-4" />
             )}
             <span className="text-xs font-mono font-bold">{scrollSpeed}</span>
           </button>
@@ -2141,9 +2144,9 @@ export const StageView: React.FC<StageViewProps> = ({
             type="button"
             onClick={() => setIsStageMenuOpen(true)}
             aria-label="Open Stage Options"
-            className="ui-button min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 w-11 sm:w-9 h-11 sm:h-9 rounded-lg bg-app-base border border-app-border text-app-text hover:border-app-action transition-colors flex items-center justify-center shrink-0 cursor-pointer"
+            className="ui-button min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 w-11 sm:w-9 h-11 sm:h-9 rounded-xl sm:rounded-lg bg-app-base border border-app-border text-app-text hover:border-app-action transition-colors flex items-center justify-center shrink-0 cursor-pointer"
           >
-            <Sliders className="w-4 h-4" />
+            <Sliders className="w-5 h-5 sm:w-4 sm:h-4" />
           </button>
 
           {/* Cast button (stays in this second toolbar row when TV Sync is enabled) */}
@@ -2151,7 +2154,7 @@ export const StageView: React.FC<StageViewProps> = ({
             <button
               type="button"
               onClick={handleTogglePresentation}
-              className={`min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 ${
+              className={`min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 p-2 rounded-xl sm:rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 shrink-0 ${
                 isCastActive
                   ? 'bg-[#DC6E67]/20 border-[#DC6E67] text-status-error hover:bg-[#DC6E67]/30 shadow-sm animate-pulse'
                   : 'bg-app-base border-app-border text-app-text hover:text-app-action hover:border-app-action'
@@ -2162,7 +2165,7 @@ export const StageView: React.FC<StageViewProps> = ({
                   : 'Cast / Pop-out Screen (Open distraction-free fullscreen teleprompter on secondary monitor or TV)'
               }
             >
-              <Cast className="w-4 h-4" />
+              <Cast className="w-5 h-5 sm:w-4 sm:h-4" />
               {isCastActive && (
                 <span className="hidden xl:inline text-[10px] font-mono font-bold uppercase tracking-wider">
                   Stop
@@ -2178,7 +2181,7 @@ export const StageView: React.FC<StageViewProps> = ({
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="ui-button min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 w-11 sm:w-9 h-11 sm:h-9 rounded-lg border border-app-border bg-app-base text-app-text hover:border-app-action transition-colors flex items-center justify-center shrink-0 cursor-pointer"
+            className="ui-button min-w-11 sm:min-w-9 min-h-11 sm:min-h-9 w-11 sm:w-9 h-11 sm:h-9 rounded-xl sm:rounded-lg border border-app-border bg-app-base text-app-text hover:border-app-action transition-colors flex items-center justify-center shrink-0 cursor-pointer"
             aria-label={
               iosPwa || iosOnly
                 ? isDistractionFree
@@ -2190,9 +2193,9 @@ export const StageView: React.FC<StageViewProps> = ({
             }
           >
             {isFullscreen || isDistractionFree ? (
-              <Minimize2 className="w-4 h-4" />
+              <Minimize2 className="w-5 h-5 sm:w-4 sm:h-4" />
             ) : (
-              <Maximize2 className="w-4 h-4" />
+              <Maximize2 className="w-5 h-5 sm:w-4 sm:h-4" />
             )}
           </button>
         </div>
