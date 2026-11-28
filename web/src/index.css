@@ -88,6 +88,27 @@ body {
   scrollbar-width: none;
 }
 
+@media (width < 40rem) {
+  .stage-toolbar-scroll {
+    overflow-x: auto;
+    scrollbar-width: none;
+    /* Local backgrounds cover each edge shadow until there is more to scroll. */
+    background-image:
+      linear-gradient(90deg, var(--color-app-surface) 45%, transparent),
+      linear-gradient(270deg, var(--color-app-surface) 45%, transparent),
+      radial-gradient(farthest-side at left, var(--color-app-border), transparent),
+      radial-gradient(farthest-side at right, var(--color-app-border), transparent);
+    background-position: left, right, left, right;
+    background-size: 16px 100%, 16px 100%, 8px 100%, 8px 100%;
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll, scroll;
+  }
+
+  .stage-toolbar-scroll::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* Keyframe shake animation for login wall */
 @keyframes shake {
   0%, 100% { transform: translateX(0); }

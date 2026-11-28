@@ -14,6 +14,15 @@ const change=async(el,value,choice='original')=>{await input(el,value);if(docume
 const shortcut=async(key,el=window)=>act(async()=>el.dispatchEvent(new window.KeyboardEvent('keydown',{key,ctrlKey:true,bubbles:true})))
 const click=async selector=>act(async()=>{assert.ok(document.querySelector(selector));document.querySelector(selector).click()})
 
+function assertStageKey(performanceKey, signedOffset) {
+ const button = document.querySelector(`[aria-label="Stage controls"] button[aria-label="Key: ${performanceKey}. Click to transpose."]`)
+ assert.ok(button, `Stage Key control shows ${performanceKey}`)
+ const expectedText = signedOffset ? ['Key:', performanceKey, signedOffset] : ['Key:', performanceKey]
+ assert.deepEqual([...button.children].map(span => span.textContent), expectedText)
+ assert.equal(button.getAttribute('aria-description'), signedOffset ? `Transpose: ${signedOffset} semitones` : null)
+ return button
+}
+
 test('109: deletion autosaves and Save/reload preserve absent directive, confirmed legacy chart metadata, original E and chord body',async()=>{
  localStorage.clear();persistLibrary({songs:[song],setlists:[]});let stored=readPersistedLibrary().songs[0]
  const update=partial=>{stored={...stored,...partial};persistLibrary({songs:[stored],setlists:[]});return true}
@@ -93,11 +102,10 @@ test('109: actual stage picker and controls use original-relative zero, reset, a
  localStorage.clear();const root=createRoot(document.getElementById('root'));let t=0
  const render=async()=>act(async()=>root.render(React.createElement(StageView,{song:{...song,transposeOffset:t},songs:[song],activeSongIndex:0,onSelectSongIndex(){},onOpenSetlistDrawer(){},transposeOffset:t,onTransposeChange:n=>{t=n}})))
  try{
-  await render();assert.match(document.body.textContent,/Transpose: \+3/)
-  const opener=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Transpose: +3'));assert.ok(opener);await act(async()=>opener.click())
+  await render();const opener=assertStageKey('G','+3');await act(async()=>opener.click())
   assert.match(document.body.textContent,/Original KeyE.*Chart Key: G.*Performance KeyG/)
   const zero=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('(Original)'));await act(async()=>zero.click());assert.equal(t,-3)
-  await render();assert.match(document.body.textContent,/Transpose: 0/);assert.ok(document.body.textContent.includes('B/D#'))
+  await render();assertStageKey('E','');assert.ok(document.body.textContent.includes('B/D#'))
   t=0;await render();const reset=document.querySelector('[aria-label="Reset Transposition to Original Key"]');assert.ok(reset);await act(async()=>reset.click());assert.equal(t,-3)
   await render();const up=document.querySelector('[aria-label="Step Key Up (+1 semitone)"], [aria-label="Transpose Up (+1)"]');assert.ok(up);await act(async()=>up.click());assert.equal(t,-2)
  }finally{await act(async()=>root.unmount())}
@@ -161,11 +169,11 @@ test('109 field QA: actual stage renders the same raw E performance as its picke
  const render=async()=>act(async()=>root.render(React.createElement(StageView,{song:{...stale,transposeOffset:offset},songs:[stale],activeSongIndex:0,onSelectSongIndex(){},onOpenSetlistDrawer(){},transposeOffset:offset,onTransposeChange:n=>{offset=n}})))
  const chords=()=>[...document.querySelectorAll('.stage-chord-token')].map(e=>e.textContent)
  try{
-  await render();assert.deepEqual(chords(),['C#','C#sus4']);assert.match(document.body.textContent,/Transpose: -3/)
-  const open=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Transpose: -3'));await act(async()=>open.click())
+  await render();assert.deepEqual(chords(),['C#','C#sus4'])
+  const open=assertStageKey('C#','-3');await act(async()=>open.click())
   assert.match(document.body.textContent,/Original KeyE.*Chart Key: E.*Performance KeyC#/)
   const zero=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('(Original)'));await act(async()=>zero.click());assert.equal(offset,0)
-  await render();assert.deepEqual(chords(),['E','Esus4'])
+  await render();assertStageKey('E','');assert.deepEqual(chords(),['E','Esus4'])
   offset=-3;await render();const reset=document.querySelector('[aria-label="Reset Transposition to Original Key"]');assert.ok(reset);await act(async()=>reset.click());assert.equal(offset,0)
   await render();assert.deepEqual(chords(),['E','Esus4']);assert.equal(stale.key,'G');assert.equal(stale.originalKey,'E')
  }finally{await act(async()=>root.unmount())}
