@@ -781,7 +781,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             setIsImportModalOpen(false)
             setImportLinkError(null)
           }}
-          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-app-border bg-app-surface ui-primary-text text-app-heading p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
+          className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-app-border bg-app-surface ui-primary-text text-app-heading p-0 shadow-2xl backdrop:bg-black/60 z-50 animate-in fade-in zoom-in-95 duration-150"
         >
           <div className="p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-3">
@@ -801,6 +801,24 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            {onNewSetlist && (
+              <div className="space-y-2 mb-5 pb-4 border-b border-app-border/60">
+                <button
+                  type="button"
+                  data-testid="create-new-setlist-btn"
+                  onClick={() => {
+                    setIsImportModalOpen(false)
+                    setImportLinkError(null)
+                    onNewSetlist()
+                  }}
+                  className="w-full min-h-11 px-3 py-2 rounded-xl bg-app-action hover:brightness-110 text-app-on-action text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                >
+                  <Plus className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>Create New Setlist</span>
+                </button>
+              </div>
+            )}
 
             {/* Primary Action: Paste GTAR Share Link */}
             <div className="space-y-2 mb-5">

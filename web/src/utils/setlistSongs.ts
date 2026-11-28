@@ -6,6 +6,14 @@ export type SongReference = WebSetlist['songs'][number]
 export const songIdentity = (song: { title: string; artist?: string }) =>
   JSON.stringify([song.title.trim().toLowerCase(), (song.artist ?? '').trim().toLowerCase()])
 
+/** Formats a local calendar date as MM-DD-YYYY with leading zeros and no time component. */
+export function formatDefaultSetlistName(date: Date = new Date()): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const year = String(date.getFullYear()).padStart(4, '0')
+  return `${month}-${day}-${year}`
+}
+
 export function resolveSetlistSong(ref: LegacySetlistSongRef, songs: ActiveSongState[]): ActiveSongState | undefined {
   if (ref.id !== undefined) return songs.find(song => song.id !== undefined && String(song.id) === String(ref.id))
   const matches = songs.filter(song => song.title.trim().toLowerCase() === ref.title.trim().toLowerCase() &&

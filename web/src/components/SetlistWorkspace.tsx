@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronRight, Download, ListMusic, MoreHorizontal, Music, PanelRight, Pencil, Play, Search, Share2, Trash2, Upload, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, ChevronRight, Download, ListMusic, Music, PanelRight, Pencil, Play, Search, Share2, Trash2, X } from 'lucide-react'
 import type { ActiveSongState, SetlistFolder, WebSetlist } from '../types/gtar'
 import { resolveSetlistExportScope, resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
-import { DropdownPortal } from './DropdownPortal'
 import { ExportSongsDialog } from './ExportSongsDialog'
 import { SetlistsHelp } from './menuHelp'
 import { MultiSongSetlistPicker } from './MultiSongSetlistPicker'
@@ -129,13 +128,13 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
     }
   }
   const handleNewSetlist = onNewSetlist ?? menu?.onNewSetlist
+  const handleAddNewSetlistClick = () => (menu?.onImport ? menu.onImport() : handleNewSetlist?.())
   const [localOpenSetlistId, setLocalOpenSetlistId] = useState<string | number | null>(null)
   const openSetlistId = controlledOpenSetlistId === undefined ? localOpenSetlistId : controlledOpenSetlistId
   const setOpenSetlistId = (id: string | number | null) => {
     setLocalOpenSetlistId(id)
     onOpenSetlistChange?.(id)
   }
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null)
   const [editingSetlistId, setEditingSetlistId] = useState<string | number | null>(null)
   const [setlistNameInput, setSetlistNameInput] = useState('')
@@ -506,12 +505,12 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
               <span className="truncate">{folderName ?? SCOPE_LABEL[scope]}</span>
               <span className="shrink-0 text-xs font-normal text-app-muted">({setlists.length})</span>
             </h2>
-            {handleNewSetlist && (
+            {(menu?.onImport || handleNewSetlist) && (
               <button
                 type="button"
                 data-testid="setlists-add-new"
                 aria-label="Add new setlist"
-                onClick={handleNewSetlist}
+                onClick={handleAddNewSetlistClick}
                 className="min-h-11 px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
               >
                 <span>Add new setlist</span>
@@ -775,21 +774,7 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                     <span className="hidden xl:inline">Preview</span>
                   </button>
                 )}
-            <button
-              type="button"
-              data-testid="workspace-scope-menu-btn"
-              aria-label="Setlist actions"
-              aria-haspopup="menu"
-              aria-expanded={!!menuAnchor}
-              onClick={e => { e.stopPropagation(); setMenuAnchor(menuAnchor ? null : e.currentTarget) }}
-              className="ui-button min-h-11 min-w-11 shrink-0 rounded-xl border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
             </div>
-            <DropdownPortal anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)} align="right">
-              <ScopeMenu menu={menu} openSetlist={openSetlist} onDone={() => setMenuAnchor(null)} />
-            </DropdownPortal>
           </div>
         )}
       </div>
@@ -854,58 +839,6 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
           }}
           onClose={() => setExportSetlistId(null)}
         />
-      )}
-    </div>
-  )
-}
-
-const menuItem = 'w-full text-left px-3 min-h-11 text-app-text hover:bg-app-surface hover:text-app-action flex items-center gap-2 cursor-pointer transition-colors'
-const menuIcon = 'w-3.5 h-3.5 text-app-action shrink-0'
-
-const ScopeMenu: React.FC<{ menu: SetlistWorkspaceMenu; openSetlist: WebSetlist | null; onDone: () => void }> = ({ menu, openSetlist, onDone }) => {
-  const run = (action?: () => void) => () => { onDone(); action?.() }
-  return (
-    <div
-      role="menu"
-      data-testid="workspace-scope-menu"
-      aria-label="Setlist actions"
-      onClick={e => e.stopPropagation()}
-      className="w-60 bg-app-base border border-app-border rounded-xl shadow-xl py-1 text-xs"
-    >
-      {!openSetlist && (
-        <div role="group" aria-label="Sort setlists" className="pb-1 mb-1 border-b border-app-border/50">
-          <div className="px-3 pt-1.5 pb-1 text-[11px] font-bold text-app-muted">Sort</div>
-          {menu.sortOptions.map(option => {
-            const checked = option.value === menu.sortValue
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="menuitemradio"
-                aria-checked={checked}
-                data-testid={`workspace-sort-${option.value}`}
-                onClick={run(() => menu.onSortChange(option.value))}
-                className={menuItem}
-              >
-                <span className="w-3.5 shrink-0">{checked && <Check className="w-3.5 h-3.5 text-app-action" />}</span>
-                <span>{option.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      )}
-      {menu.onImport && (
-        <button type="button" role="menuitem" data-testid="workspace-menu-import" onClick={run(menu.onImport)} className={menuItem}>
-          <Upload className={menuIcon} />
-          <span>Import Setlist</span>
-        </button>
-      )}
-      {openSetlist && menu.onExportSetlist && (
-        <button type="button" role="menuitem" data-testid="workspace-menu-export-json"
-          onClick={run(() => menu.onExportSetlist!(openSetlist))} className={menuItem}>
-          <Upload className={`${menuIcon} rotate-180`} />
-          <span>Export Setlist</span>
-        </button>
       )}
     </div>
   )

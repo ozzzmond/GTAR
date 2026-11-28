@@ -51,7 +51,7 @@ import {
   loadThemeModeAssignments,
   isLightTheme,
 } from './utils/backupSettings'
-import { setSongMembership, resolveSetlistSong, partitionSongs, transitionSongLibrary, type SongLifecycleOperation } from './utils/setlistSongs'
+import { formatDefaultSetlistName, setSongMembership, resolveSetlistSong, partitionSongs, transitionSongLibrary, type SongLifecycleOperation } from './utils/setlistSongs'
 import {
   readStageSession,
   saveStageSession,
@@ -1328,7 +1328,7 @@ function LibraryApp() {
   // Create a new setlist
   const handleNewSetlist = () => {
     const newId = generateUUID()
-    const newSetlistName = `Setlist ${setlists.length + 1}`
+    const newSetlistName = formatDefaultSetlistName()
     const created: WebSetlist = {
       id: newId,
       name: newSetlistName,
