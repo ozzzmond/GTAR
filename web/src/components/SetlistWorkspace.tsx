@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronRight, ListMusic, MoreHorizontal, Music, PanelRight, Pencil, Play, Search, Share2, Trash2, Upload, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronRight, Download, ListMusic, MoreHorizontal, Music, PanelRight, Pencil, Play, Search, Share2, Trash2, Upload, X } from 'lucide-react'
 import type { ActiveSongState, SetlistFolder, WebSetlist } from '../types/gtar'
-import { resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
+import { resolveSetlistExportScope, resolveSetlistSongIndexed, songIdIndex } from '../utils/setlistSongs'
 import { transposeContext } from '../utils/songKeySemantics'
 import { DropdownPortal } from './DropdownPortal'
+import { ExportSongsDialog } from './ExportSongsDialog'
 import { SetlistsHelp } from './menuHelp'
 import { MultiSongSetlistPicker } from './MultiSongSetlistPicker'
 import { SwipeableActionCard } from './SwipeableActionCard'
@@ -196,6 +197,15 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [openSetlist, shortcutsBlocked])
   const songIndex = useMemo(() => songIdIndex(songs), [songs])
+  const [exportSetlistId, setExportSetlistId] = useState<string | number | null>(null)
+  const exportTargetSetlist = useMemo(
+    () => (exportSetlistId !== null && openSetlist && String(openSetlist.id) === String(exportSetlistId) ? openSetlist : null),
+    [exportSetlistId, openSetlist]
+  )
+  const exportScope = useMemo(
+    () => (exportTargetSetlist ? resolveSetlistExportScope(exportTargetSetlist, songs) : null),
+    [exportTargetSetlist, songs]
+  )
 
   // Missing or trashed songs stay visible for context but cannot be played or opened.
   const entries = useMemo<EntryView[]>(() => {
@@ -341,6 +351,15 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
                   <Share2 className="w-4 h-4" aria-hidden="true" />
                 </button>
               )}
+              <button
+                type="button"
+                data-testid="workspace-export-setlist-songs"
+                aria-label="Export Songs"
+                onClick={() => setExportSetlistId(targetSetlist.id)}
+                className="ui-button min-h-11 min-w-11 rounded-xl border border-app-border bg-app-button text-app-action hover:brightness-110 flex items-center justify-center cursor-pointer shrink-0 transition-colors"
+              >
+                <Download className="w-4 h-4" aria-hidden="true" />
+              </button>
               {(onRequestTrashSetlist || onDeleteSetlist) && (
                 <button
                   type="button"
@@ -820,6 +839,20 @@ export const SetlistWorkspace: React.FC<SetlistWorkspaceProps> = ({
           allSongs={songs}
           onAddSongs={handlePickerAdd}
           triggerRef={searchTriggerRef}
+        />
+      )}
+      {exportTargetSetlist && exportScope && (
+        <ExportSongsDialog
+          key={String(exportTargetSetlist.id)}
+          songs={exportScope.songs}
+          preselected={exportScope.songs.map(s => s.id!).filter((id): id is string | number => id !== undefined)}
+          setlistScope={{
+            setlistName: exportTargetSetlist.name,
+            totalEntries: exportScope.totalEntries,
+            duplicateCount: exportScope.duplicateCount,
+            missingEntries: exportScope.missingEntries,
+          }}
+          onClose={() => setExportSetlistId(null)}
         />
       )}
     </div>

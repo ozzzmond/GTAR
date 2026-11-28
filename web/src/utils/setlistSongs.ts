@@ -25,6 +25,53 @@ export function resolveSetlistSongIndexed(ref: LegacySetlistSongRef, songs: Acti
   return ref.id !== undefined ? index.get(String(ref.id)) : resolveSetlistSong(ref, songs)
 }
 
+export interface SetlistExportScope {
+  songs: ActiveSongState[]
+  totalEntries: number
+  duplicateCount: number
+  missingEntries: Array<{ title: string; artist?: string }>
+}
+
+/**
+ * Resolves locally available, exportable songs referenced by a setlist,
+ * preserving first-seen setlist order while collapsing duplicate references
+ * and explicitly tracking missing, trashed, or blank-chart entries.
+ */
+export function resolveSetlistExportScope(setlist: WebSetlist, allSongs: ActiveSongState[]): SetlistExportScope {
+  const index = songIdIndex(allSongs)
+  const seenIds = new Set<string>()
+  const resolved: ActiveSongState[] = []
+  const missingEntries: Array<{ title: string; artist?: string }> = []
+  let duplicateCount = 0
+  const refs = setlist.songs || []
+
+  for (const ref of refs) {
+    const song = resolveSetlistSongIndexed(ref, allSongs, index)
+    const exportable = Boolean(song && !song.isDeleted && song.id !== undefined && song.rawContent?.trim())
+    if (!exportable || !song) {
+      missingEntries.push({
+        title: song?.title || ref.title || 'Untitled Song',
+        artist: song?.artist || ref.artist,
+      })
+      continue
+    }
+    const key = String(song.id)
+    if (seenIds.has(key)) {
+      duplicateCount++
+      continue
+    }
+    seenIds.add(key)
+    resolved.push(song)
+  }
+
+  return {
+    songs: resolved,
+    totalEntries: refs.length,
+    duplicateCount,
+    missingEntries,
+  }
+}
+
 /** Run at library load/import; saved IDs remain authoritative after edits. */
 export function bindLegacySetlists(setlists: Array<Omit<WebSetlist, 'songs'> & { songs: LegacySetlistSongRef[] }>, songs: ActiveSongState[]): WebSetlist[] {
   const byId = songIdIndex(songs)
