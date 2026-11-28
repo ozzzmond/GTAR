@@ -317,7 +317,7 @@ test('Stage Options: help in the sheet header; Escape closes help before the she
 })
 
 test('help is wired into toolbars and dialogs; About is untouched', () => {
-  assert.match(read('components/SongbookHomeView.tsx'), /<SongsLibraryHelp canImport=\{Boolean\(onOpenImportSongs\)\} canCheckDuplicates=\{Boolean\(onTrashDuplicates\)\} \/>\s*<button\s+type="button"\s+data-testid="songs-library-menu-btn"/, 'Songs help sits beside the library menu')
+  assert.match(read('components/SongbookHomeView.tsx'), /<SongsLibraryHelp canImport=\{Boolean\(onOpenImportSongs\)\} canCheckDuplicates=\{Boolean\(onTrashDuplicates\)\} \/>/, 'Songs help sits in the library toolbar')
   assert.match(read('components/SetlistWorkspace.tsx'), /<SetlistsHelp className="mr-0\.5" \/>/, 'Setlists help sits in the setlist toolbar')
   assert.match(read('components/StageView.tsx'), /<StagePreviewHelp \/>[\s\S]*?<button[^>]*onClick=\{toggleFullscreen\}/, 'Stage Preview help sits immediately to the left of the Fullscreen button')
   assert.match(read('components/StageView.tsx'), /data-testid="toolbar-back"[\s\S]*?<\/div>[\s\S]*?<div[^>]*justify-end/, 'Back button aligned separately on the left while other controls group toward the right')
@@ -339,9 +339,9 @@ test('"+ Add" wording is normalized to "Add" across rendered labels', () => {
     assert.doesNotMatch(source, /[>'"`]\s*\+\s?Add\b/, `${file}: no "+ Add" label`)
     assert.doesNotMatch(source, /<Plus\b[^>]*\/>\s*(?:<span>)?\s*Add\b/, `${file}: no plus icon in front of an Add label`)
   }
-  const addSongButton = read('components/SongbookHomeView.tsx').match(/<button\b[^>]*data-testid="songs-add-song"[^>]*>[\s\S]*?<\/button>/)
-  assert.ok(addSongButton, 'Add Song button exists')
-  assert.match(addSongButton[0], /<span>Add Song<\/span>/, 'Add Song label is inside the Add Song button')
+  const manageButton = read('components/SongbookHomeView.tsx').match(/<button\b[^>]*data-testid="songs-manage-btn"[^>]*>[\s\S]*?<\/button>/)
+  assert.ok(manageButton, 'Manage button exists')
+  assert.match(manageButton[0], /<span>Manage<\/span>/, 'Manage label is inside the Manage button')
   assert.match(read('components/SetlistWorkspace.tsx'), /aria-label="Add new setlist"[\s\S]{0,320}<span>Add new setlist<\/span>/)
   assert.match(read('components/WebsiteUrlSourceModal.tsx'), /<span>Add Custom Website URL<\/span>/)
   assert.match(read('components/MultiSongSetlistPicker.tsx'), /'Add Selected to Setlist'/)

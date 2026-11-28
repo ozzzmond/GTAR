@@ -101,10 +101,10 @@ test('dialog: Manage selection is preselected; PDF offers saved or transposed ke
   assert.ok(document.querySelector('[data-testid="export-key-transposed"]'))
 })
 
-test('Songs Library ⋯ menu has Export songs, which opens the dialog', async () => {
+test('Songs Library Manage menu has Export songs, which opens the dialog', async () => {
   await render(SongbookHomeView, { songs: [song('a')], setlists: [], activeSongIndex: 0, activeTab: 'my_songs',
     onOpenImportSongs() {}, onSelectSong() {}, onNewSong() {}, onOpenSetlists() {}, onDeleteSong() {} })
-  await act(async () => document.querySelector('[data-testid="songs-library-menu-btn"]').click())
+  await act(async () => document.querySelector('[data-testid="songs-manage-btn"]').click())
   await act(async () => document.querySelector('[data-testid="songs-library-menu-export"]').click())
   assert.ok(document.querySelector('[data-testid="export-songs-dialog"]'))
 })

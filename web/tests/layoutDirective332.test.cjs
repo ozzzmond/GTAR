@@ -84,15 +84,14 @@ test('SCOPE 1: Header removes Songbook/Setlists toggle, New Song, and Sources; k
   assert.ok($('button[aria-label="Open Music Explorer"]'), 'Music explorer button is kept for mobile navigation')
 }))
 
-test('SCOPE 2: Songbook page removes Browse Sources; keeps Add Song', async () => ui(async ({ $, render }) => {
+test('SCOPE 2: Songbook page removes Browse Sources; replaces Add Song with Manage', async () => ui(async ({ $, render }) => {
   const { SongbookHomeView } = require('../src/components/SongbookHomeView.tsx')
-  let newSongCalled = false
   await render(SongbookHomeView, {
     songs: [{ id: 's1', title: 'Song 1', artist: 'Band', rawContent: '[C]lyrics' }],
     activeSongIndex: 0,
     setlists: [],
     onSelectSong: noop,
-    onNewSong: () => { newSongCalled = true },
+    onNewSong: noop,
     onOpenSources: noop,
     onSongMembershipChange: noop,
     onCreateSetlistForSong: noop,
@@ -101,11 +100,12 @@ test('SCOPE 2: Songbook page removes Browse Sources; keeps Add Song', async () =
   })
 
   assert.equal($('[data-testid="songs-browse-sources"]'), null, 'Browse Sources button is removed from Songbook')
-  const addSongBtn = $('[data-testid="songs-add-song"]')
-  assert.ok(addSongBtn, 'Add Song button is kept in Songbook')
-  assert.match(addSongBtn.textContent, /Add Song/)
-  await act(async () => addSongBtn.click())
-  assert.equal(newSongCalled, true)
+  assert.equal($('[data-testid="songs-add-song"]'), null, 'Add Song button is removed from Songbook')
+  const manageBtn = $('[data-testid="songs-manage-btn"]')
+  assert.ok(manageBtn, 'Manage button is present in Songbook')
+  assert.match(manageBtn.textContent, /Manage/)
+  await act(async () => manageBtn.click())
+  assert.ok($('[data-testid="songs-library-menu-export"]'), 'Manage opens the song management menu')
 }))
 
 test('SCOPE 3: Music Explorer removes New Song and New Set quick actions', async () => ui(async ({ $, render }) => {

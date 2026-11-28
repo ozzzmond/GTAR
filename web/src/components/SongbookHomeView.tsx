@@ -27,7 +27,6 @@ import {
   Upload,
   Pencil,
   Share2,
-  MoreHorizontal,
   Copy,
   Check,
   CheckCircle2,
@@ -1170,50 +1169,9 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
               <PanelRight className="w-4 h-4" />
               <span className="hidden xl:inline">Preview</span>
             </button>
-            {(onOpenImportSongs || onTrashDuplicates) && (
-              <div className={`${songs.length > 0 ? 'row-start-2' : 'row-start-1'} col-start-2 justify-self-end self-start sm:self-auto flex items-center gap-2 shrink-0`}>
-                <SongsLibraryHelp canImport={Boolean(onOpenImportSongs)} canCheckDuplicates={Boolean(onTrashDuplicates)} />
-                <button
-                  type="button"
-                  data-testid="songs-library-menu-btn"
-                  aria-label="Songs Library actions"
-                  aria-haspopup="menu"
-                  aria-expanded={!!libraryMenuAnchor}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    closeAllMenus()
-                    setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
-                  }}
-                  className="ui-button h-11 sm:h-auto min-h-11 sm:min-h-9 min-w-11 sm:min-w-9 rounded-xl sm:rounded-lg border border-app-border bg-app-button text-app-button-text hover:brightness-110 flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </button>
-                <DropdownPortal anchorEl={libraryMenuAnchor} open={!!libraryMenuAnchor} onClose={() => setLibraryMenuAnchor(null)} align="right" zIndex={40}>
-                  <div role="menu" onClick={(e) => e.stopPropagation()}
-                    className="w-52 bg-app-surface border border-app-border rounded-xl shadow-2xl p-1.5 text-xs animate-in fade-in zoom-in-95 duration-100">
-                    {onOpenImportSongs && (
-                      <button type="button" role="menuitem" data-testid="songs-library-menu-import"
-                        onClick={() => { setLibraryMenuAnchor(null); onOpenImportSongs() }} className={cardMenuItem}>
-                        <Upload className="w-3.5 h-3.5 text-app-action" />
-                        <span>Import songs…</span>
-                      </button>
-                    )}
-                    <button type="button" role="menuitem" data-testid="songs-library-menu-export" disabled={songs.length === 0}
-                      onClick={() => { setLibraryMenuAnchor(null); setIsExportSongsOpen(true) }} className={cardMenuItem}>
-                      <Upload className="w-3.5 h-3.5 text-app-action rotate-180" />
-                      <span>Export songs (TXT / PDF)…</span>
-                    </button>
-                    {onTrashDuplicates && (
-                      <button type="button" role="menuitem" data-testid="songs-library-menu-duplicates" disabled={songs.length < 2}
-                        onClick={() => { setLibraryMenuAnchor(null); setIsDuplicateReviewOpen(true) }} className={cardMenuItem}>
-                        <Copy className="w-3.5 h-3.5 text-app-action" />
-                        <span>AI Worker: check duplicates…</span>
-                      </button>
-                    )}
-                  </div>
-                </DropdownPortal>
-              </div>
-            )}
+            <div className={`${songs.length > 0 ? 'row-start-2' : 'row-start-1'} col-start-2 justify-self-end self-start sm:self-auto flex items-center gap-2 shrink-0`}>
+              <SongsLibraryHelp canImport={Boolean(onOpenImportSongs)} canCheckDuplicates={Boolean(onTrashDuplicates)} />
+            </div>
           </div>
         )}
       </div>
@@ -1310,7 +1268,7 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
       )}
       {isExportSongsOpen && <ExportSongsDialog songs={songs} onClose={() => setIsExportSongsOpen(false)} />}
 
-      {/* 3. Songs heading (GTAR1): title + count, Browse Sources, Add Song */}
+      {/* 3. Songs heading (GTAR1): title + count, Manage */}
       <section aria-label="Songs Library" className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h2 className="ui-primary-text text-base font-bold text-app-heading flex items-center gap-2 min-w-0">
@@ -1321,10 +1279,45 @@ export const SongbookHomeView: React.FC<SongbookHomeViewProps> = ({
             </span>
           </h2>
           <div className="flex items-center gap-1.5 shrink-0">
-            <button type="button" data-testid="songs-add-song" onClick={onNewSong}
-              className="min-h-11 h-11 sm:min-h-[42px] sm:h-[42px] px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
-              <span>Add Song</span>
+            <button
+              type="button"
+              data-testid="songs-manage-btn"
+              aria-label="Manage songs"
+              aria-haspopup="menu"
+              aria-expanded={!!libraryMenuAnchor}
+              onClick={(e) => {
+                e.stopPropagation()
+                closeAllMenus()
+                setLibraryMenuAnchor(libraryMenuAnchor ? null : e.currentTarget)
+              }}
+              className="min-h-11 h-11 sm:min-h-[42px] sm:h-[42px] px-3 rounded-xl bg-app-action hover:brightness-110 text-app-on-action font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <span>Manage</span>
             </button>
+            <DropdownPortal anchorEl={libraryMenuAnchor} open={!!libraryMenuAnchor} onClose={() => setLibraryMenuAnchor(null)} align="right" zIndex={40}>
+              <div role="menu" onClick={(e) => e.stopPropagation()}
+                className="w-52 bg-app-surface border border-app-border rounded-xl shadow-2xl p-1.5 text-xs animate-in fade-in zoom-in-95 duration-100">
+                {onOpenImportSongs && (
+                  <button type="button" role="menuitem" data-testid="songs-library-menu-import"
+                    onClick={() => { setLibraryMenuAnchor(null); onOpenImportSongs() }} className={cardMenuItem}>
+                    <Upload className="w-3.5 h-3.5 text-app-action" />
+                    <span>Import songs…</span>
+                  </button>
+                )}
+                <button type="button" role="menuitem" data-testid="songs-library-menu-export" disabled={songs.length === 0}
+                  onClick={() => { setLibraryMenuAnchor(null); setIsExportSongsOpen(true) }} className={cardMenuItem}>
+                  <Upload className="w-3.5 h-3.5 text-app-action rotate-180" />
+                  <span>Export songs (TXT / PDF)…</span>
+                </button>
+                {onTrashDuplicates && (
+                  <button type="button" role="menuitem" data-testid="songs-library-menu-duplicates" disabled={songs.length < 2}
+                    onClick={() => { setLibraryMenuAnchor(null); setIsDuplicateReviewOpen(true) }} className={cardMenuItem}>
+                    <Copy className="w-3.5 h-3.5 text-app-action" />
+                    <span>AI Worker: check duplicates…</span>
+                  </button>
+                )}
+              </div>
+            </DropdownPortal>
           </div>
         </div>
 

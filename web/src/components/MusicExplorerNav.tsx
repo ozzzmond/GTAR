@@ -130,12 +130,7 @@ export const MusicExplorerNav: React.FC<MusicExplorerNavProps> = ({
           'Songbook',
           songbookExpanded,
           () => setSongbookExpanded((value) => !value),
-          <div className="flex min-w-0 items-center gap-1.5 max-sm:gap-1">
-            <span className="min-w-0 truncate text-[10px] uppercase tracking-wider text-app-muted max-sm:text-xs max-sm:normal-case max-sm:tracking-normal">
-              {songs.length} {songs.length === 1 ? 'master song' : 'master songs'}
-            </span>
-            {headerAction}
-          </div>
+          headerAction ? <div className="flex min-w-0 items-center gap-1.5 max-sm:gap-1">{headerAction}</div> : undefined
         )}
         {songbookExpanded && (
           <div className="space-y-0.5 pl-1 max-sm:space-y-1 max-sm:pl-0">
