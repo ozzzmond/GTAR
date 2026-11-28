@@ -16,7 +16,7 @@ const DENY = [
   'README.md', 'LICENSE', 'LICENSE.md',
   'web/tests/', 'web/docs/', 'web/GOOGLE_SYNC.md', 'web/LEGACY_IMPORT_COMPATIBILITY.md',
   'web/wrangler.stage-cast2-dev.jsonc',
-  'web/wrangler.band-sync-dev.jsonc',
+  'web/wrangler.band-sync-dev.jsonc', 'web/wrangler.band-sync-prod.jsonc', 'web/wrangler.band-sync-gtar1-prod.jsonc',
   'web/workers/bandSyncBackend.ts', 'web/workers/bandSyncWorker.ts',
   'web/BAND_SYNC_P1.md', // Internal deployment notes name GTAR's worker.
   'web/scripts/gtar1-export.cjs', // Owner-only exporter carries GTAR identifier guards.
@@ -198,7 +198,9 @@ function patchWrangler(text, ids) {
         return { ...db, database_name: rename[0], database_id: ids[rename[1]] }
       })
     }
-    delete node.services
+    // Only GTAR1 Production binds Band Sync, to GTAR1's own same-account Worker. Demo (preview) and root stay unbound => 503 DISABLED.
+    if (envName === 'production') node.services = [{ binding: 'BANDSYNC_WORKER', service: 'gtar1-band-sync-prod' }]
+    else delete node.services
     delete node.durable_objects
     if (node.vars) delete node.vars.CAST2_ORIGIN
     // GTAR1 Production (main) enables online song providers; Demo (preview) and unknown/root environments fail closed (#632).

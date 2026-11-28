@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gtar-band-sync-prod",
+  "main": "workers/bandSyncWorker.ts",
+  "compatibility_date": "2026-09-10",
+  "durable_objects": {
+    "bindings": [
+      { "name": "BANDSYNC_HUB", "class_name": "BandSyncHub" },
+      { "name": "BANDSYNC_DIRECTORY", "class_name": "BandSyncDirectory" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BandSyncHub", "BandSyncDirectory"] }],
+  "vars": {
+    "BANDSYNC_MODE": "disabled"
+  }
+}

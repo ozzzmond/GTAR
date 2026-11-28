@@ -389,3 +389,16 @@ test('end and expiry release directory slot through hub without worker; /end als
     assert.equal((await g.post('/create')).status, 200)
   }
 })
+
+test('production Worker configs are isolated, fail closed and carry the SQLite DO migration', () => {
+  const read = f => JSON.parse(fs.readFileSync(require.resolve('../' + f), 'utf8'))
+  const dev = read('wrangler.band-sync-dev.jsonc'), gtar = read('wrangler.band-sync-prod.jsonc'), gtar1 = read('wrangler.band-sync-gtar1-prod.jsonc')
+  assert.deepEqual([gtar.name, gtar1.name], ['gtar-band-sync-prod', 'gtar1-band-sync-prod'])
+  assert.equal(new Set([dev.name, gtar.name, gtar1.name]).size, 3)
+  for (const c of [gtar, gtar1]) {
+    assert.equal(c.vars.BANDSYNC_MODE, 'disabled'); assert.equal(c.vars.BANDSYNC_ORIGIN, undefined)
+    assert.equal(c.main, 'workers/bandSyncWorker.ts'); assert.deepEqual(c.durable_objects, dev.durable_objects)
+    assert.deepEqual(c.migrations, dev.migrations); assert.equal(c.durable_objects.bindings.some(b => b.script_name), false)
+    assert.equal(c.d1_databases, undefined); assert.equal(c.services, undefined)
+  }
+})

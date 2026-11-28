@@ -19,6 +19,7 @@
   ],
   "env": {
     "production": {
+      "services": [{ "binding": "BANDSYNC_WORKER", "service": "gtar-band-sync-prod" }],
       "compatibility_flags": [
         "nodejs_compat"
       ],

@@ -163,12 +163,13 @@ test('Band Sync wiring is stripped from root and every environment and leaks fai
   const node = () => ({ services: [{ binding: 'BANDSYNC_WORKER', service: 'gtar-band-sync-dev' }] })
   const source = { ...node(), env: { preview: node(), production: node(), custom: node() } }
   const out = JSON.parse(E.patchWrangler(JSON.stringify(source), ids))
-  for (const n of [out, ...Object.values(out.env)]) assert.ok(!Object.hasOwn(n, 'services'))
+  for (const n of [out, out.env.preview, out.env.custom]) assert.ok(!Object.hasOwn(n, 'services'))
+  assert.deepEqual(out.env.production.services, [{ binding: 'BANDSYNC_WORKER', service: 'gtar1-band-sync-prod' }])
   assert.throws(() => E.patchWrangler(JSON.stringify({ vars: { LEFTOVER: 'gtar-band-sync-dev' } }), ids), /GTAR identifier gtar-band-sync/)
 })
 
 test('Band Sync deployment files cannot enter the snapshot file set', () => {
-  for (const file of ['web/wrangler.band-sync-dev.jsonc', 'web/workers/bandSyncBackend.ts', 'web/workers/bandSyncWorker.ts']) {
+  for (const file of ['web/wrangler.band-sync-dev.jsonc', 'web/wrangler.band-sync-prod.jsonc', 'web/wrangler.band-sync-gtar1-prod.jsonc', 'web/workers/bandSyncBackend.ts', 'web/workers/bandSyncWorker.ts']) {
     assert.ok(E.isExcluded(file), file)
   }
 })
@@ -181,11 +182,13 @@ test('snapshot omits Band Sync deployment files and worker identifiers', () => {
     E.writeSnapshot(repo, out, { ...E.mapSourceTag('v1.2.3'), sha: 'a'.repeat(40), included }, {
       prod: '11111111-1111-4111-8111-111111111111', dev: '22222222-2222-4222-8222-222222222222',
     })
-    for (const f of ['web/wrangler.band-sync-dev.jsonc', 'web/workers/bandSyncBackend.ts', 'web/workers/bandSyncWorker.ts']) {
+    for (const f of ['web/wrangler.band-sync-dev.jsonc', 'web/wrangler.band-sync-prod.jsonc', 'web/wrangler.band-sync-gtar1-prod.jsonc', 'web/workers/bandSyncBackend.ts', 'web/workers/bandSyncWorker.ts']) {
       assert.ok(!fs.existsSync(path.join(out, f)), f)
     }
     const config = fs.readFileSync(path.join(out, 'web/wrangler.jsonc'), 'utf8')
     assert.ok(!config.includes('gtar-band-sync'))
-    assert.ok(!config.includes('"services"'))
+    const exported = JSON.parse(config)
+    assert.deepEqual(exported.env.production.services, [{ binding: 'BANDSYNC_WORKER', service: 'gtar1-band-sync-prod' }])
+    assert.equal(exported.services, undefined); assert.equal(exported.env.preview.services, undefined)
   } finally { fs.rmSync(out, { recursive: true, force: true }) }
 })

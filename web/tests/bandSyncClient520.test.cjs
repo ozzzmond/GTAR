@@ -120,7 +120,7 @@ test('Pages proxy is disabled without binding; only allowlisted HTTP and Upgrade
     if (!upgrade) assert.equal(await seen.text(), '{}')
   }
   const config = JSON.parse(fs.readFileSync(require.resolve('../wrangler.jsonc'), 'utf8'))
-  assert.deepEqual(config.env.preview.services, [{ binding: 'BANDSYNC_WORKER', service: 'gtar-band-sync-dev' }]); assert.equal(config.env.production.services, undefined)
+  assert.deepEqual(config.env.preview.services, [{ binding: 'BANDSYNC_WORKER', service: 'gtar-band-sync-dev' }]); assert.deepEqual(config.env.production.services, [{ binding: 'BANDSYNC_WORKER', service: 'gtar-band-sync-prod' }]); assert.equal(config.services, undefined)
 })
 test('create/join/ticket status table shows fixed errors without reading bodies, headers or logging secrets', async () => {
   const networkMessage = 'Could not reach Band Sync (network or sign-in)'
