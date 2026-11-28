@@ -4,15 +4,24 @@ import type { ActiveSongState } from '../types/gtar'
 import { downloadText, printSongs, songsToTxt, type ExportKeyMode } from '../utils/songExport'
 import { ExportSongsHelp } from './menuHelp'
 
+export interface ExportSongsScopeInfo {
+  setlistName: string
+  totalEntries: number
+  duplicateCount: number
+  missingEntries: Array<{ title: string; artist?: string }>
+}
+
 interface Props {
   songs: ActiveSongState[]
   /** Songs chosen in Manage mode, if any; otherwise nothing is preselected. */
   preselected?: Array<string | number>
+  /** Optional setlist context when opened from a selected setlist. */
+  setlistScope?: ExportSongsScopeInfo
   onClose: () => void
 }
 
-/** #149 S5: Songs Library ⋯ → Export songs… (TXT / PDF). Local only; songs are not changed. */
-export function ExportSongsDialog({ songs, preselected = [], onClose }: Props) {
+/** #149 S5: Songs Library ⋯ → Export songs… (TXT / PDF), and #646 setlist emergency export. Local only; songs are not changed. */
+export function ExportSongsDialog({ songs, preselected = [], setlistScope, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const exportable = useMemo(() => songs.filter(s => s.id !== undefined && s.rawContent?.trim()), [songs])
   const [chosen, setChosen] = useState<Set<string>>(() => new Set(preselected.map(String)))
@@ -82,7 +91,9 @@ export function ExportSongsDialog({ songs, preselected = [], onClose }: Props) {
             <h2 id="export-songs-title" className="text-sm sm:text-base font-bold text-app-heading truncate">
               Export Songs
             </h2>
-            <p className="text-[11px] text-app-muted truncate">ChordPro text or printable PDF</p>
+            <p className="text-xs text-app-muted truncate">
+              {setlistScope ? `Setlist: ${setlistScope.setlistName} · ChordPro or PDF` : 'ChordPro text or printable PDF'}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -198,14 +209,52 @@ export function ExportSongsDialog({ songs, preselected = [], onClose }: Props) {
                 <span className="font-medium">Current transposed key</span>
               </label>
             </div>
+            <p className="text-xs text-app-muted">
+              Saved key exports the original stored chart; Current transposed key applies the current transpose offset without modifying saved songs or setlist settings.
+            </p>
           </fieldset>
         ) : (
           <div className="p-2.5 rounded-xl bg-app-base/60 border border-app-border/70 text-xs text-app-muted leading-relaxed">
-            TXT saves charts as stored. Multiple songs are grouped in one file, separated by{' '}
+            TXT saves original stored charts and metadata as stored without changing songs or setlist transpose settings. Multiple songs are grouped in one file, separated by{' '}
             <code className="px-1.5 py-0.5 rounded bg-app-surface border border-app-border/80 font-mono text-[11px] text-app-heading">
               {'{new_song}'}
             </code>
             .
+          </div>
+        )}
+
+        {setlistScope && setlistScope.totalEntries === 0 && (
+          <div
+            data-testid="export-empty-setlist-notice"
+            className="p-3 rounded-xl bg-app-base/70 border border-app-border text-xs text-app-muted"
+          >
+            This setlist has no songs to export.
+          </div>
+        )}
+
+        {setlistScope && setlistScope.missingEntries.length > 0 && (
+          <div
+            data-testid="export-missing-songs-notice"
+            role="status"
+            className="p-3 rounded-xl bg-status-warning/10 border border-status-warning/40 text-xs text-app-heading space-y-1"
+          >
+            <p className="font-semibold">
+              {setlistScope.missingEntries.length}{' '}
+              {setlistScope.missingEntries.length === 1 ? 'song in this setlist is' : 'songs in this setlist are'} unavailable locally and cannot be exported:
+            </p>
+            <p className="text-app-muted break-words">
+              {setlistScope.missingEntries.map(e => e.title).join(', ')}
+            </p>
+          </div>
+        )}
+
+        {setlistScope && setlistScope.duplicateCount > 0 && (
+          <div
+            data-testid="export-duplicate-songs-notice"
+            className="p-3 rounded-xl bg-app-base/70 border border-app-border text-xs text-app-muted"
+          >
+            {setlistScope.duplicateCount} duplicate{' '}
+            {setlistScope.duplicateCount === 1 ? 'reference in this setlist was' : 'references in this setlist were'} combined so each song exports once.
           </div>
         )}
 
@@ -275,7 +324,7 @@ export function ExportSongsDialog({ songs, preselected = [], onClose }: Props) {
           })}
           {!visible.length && (
             <li className="text-xs sm:text-sm text-app-muted px-3 py-6 text-center">
-              No songs match.
+              {setlistScope && setlistScope.totalEntries === 0 ? 'This setlist is empty.' : 'No songs match.'}
             </li>
           )}
         </ul>

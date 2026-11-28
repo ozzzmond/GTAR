@@ -360,9 +360,11 @@ test('setlist detail header renders Delete action immediately after QR and reque
 
   const actions = [...header.querySelectorAll('button')]
   const qrIdx = actions.findIndex(b => b.getAttribute('aria-label') === 'Share Setlist' || b.getAttribute('data-testid') === 'workspace-share-setlist')
+  const exportIdx = actions.findIndex(b => b.getAttribute('aria-label') === 'Export Songs' || b.getAttribute('data-testid') === 'workspace-export-setlist-songs')
   const deleteIdx = actions.indexOf(deleteBtn)
   if (qrIdx !== -1) {
-    assert.equal(deleteIdx, qrIdx + 1, 'delete button appears immediately after QR button')
+    assert.equal(exportIdx, qrIdx + 1, 'export songs button appears immediately after QR button')
+    assert.equal(deleteIdx, exportIdx + 1, 'delete button appears immediately after Export Songs button')
   }
 
   await click(deleteBtn)
