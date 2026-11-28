@@ -113,10 +113,7 @@ test('toolbar placement: Export Songs sits between Share and Trash, not in three
     )
   }
 
-  await click($('[data-testid="workspace-scope-menu-btn"]'))
-  const scopeMenu = $('[data-testid="workspace-scope-menu"]')
-  assert.ok(scopeMenu)
-  assert.equal(scopeMenu.textContent.includes('Export Songs'), false, 'Export Songs is not in the three-dot menu')
+  assert.equal($('[data-testid="workspace-scope-menu-btn"]'), null, 'meatball menu is removed from setlists toolbar')
 })
 
 test('5-song setlist exports only its 5 songs offline without mutating songs or setlist, and imports back', async () => {

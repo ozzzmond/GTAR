@@ -302,7 +302,8 @@ test('#359: desktop Songbook 2nd row (songbook-filter-bar) stays visible when Ex
     assert.ok($('[data-testid="filter-tags-select"]'), 'Tags filter')
     assert.ok($('[data-testid="sort-title"]'), 'Title sort')
     assert.ok($('[data-testid="toggle-song-selection-mode"]'), 'Select button')
-    assert.ok($('[data-testid="songs-library-menu-btn"]'), '... menu button')
+    assert.ok($('[data-testid="songs-manage-btn"]'), 'Manage menu button')
+    assert.equal($('[data-testid="songs-library-menu-btn"]'), null, 'meatball menu button removed')
 
     // 2. Collapse Music Explorer
     await click(collapseBtn)
@@ -336,7 +337,7 @@ test('#359: desktop Songbook 2nd row (songbook-filter-bar) stays visible when Ex
     assert.ok($('[data-testid="filter-tags-select"]'))
     assert.ok($('[data-testid="sort-title"]'))
     assert.ok($('[data-testid="toggle-song-selection-mode"]'))
-    assert.ok($('[data-testid="songs-library-menu-btn"]'))
+    assert.ok($('[data-testid="songs-manage-btn"]'))
 
     // 3. Re-expand Music Explorer via edge toggle
     await click(edgeGrip)
@@ -428,8 +429,7 @@ test('#388 follow-up: collapsed grip owns its width and the Explorer header cann
   assert.doesNotMatch(grip, /min-w-11/, 'no hit area overhangs into main')
 
   const nav = fs.readFileSync(path.join(__dirname, '../src/components/MusicExplorerNav.tsx'), 'utf8')
-  assert.match(nav, /flex min-w-0 items-center gap-1\.5/, 'songbook header right group can shrink')
-  assert.match(nav, /min-w-0 truncate text-\[10px\] uppercase[\s\S]*?master song/, 'master-song count truncates instead of overlapping')
+  assert.doesNotMatch(nav, /master songs?/, 'redundant master-song count removed from Songbook header')
 })
 
 // #388: the Explorer nav was pinned to 288px inside the 256px md aside, so the right-aligned

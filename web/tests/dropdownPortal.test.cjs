@@ -37,14 +37,14 @@ for (const width of [320, 1280]) test(`portal actions, viewport bounds and dismi
       onDeleteSong: () => deleted++, onOpenImportSongs() {},
       onSongMembershipChange() {}, onCreateSetlistForSong() {},
     }))))
-    // #319: the GTAR1 Songbook view has the song card ⋯ and the Songs Library ⋯ portal menus.
-    for (const id of ['song-menu-0', 'songs-library-menu-btn']) {
+    // #319 / #649: the GTAR1 Songbook view has the song card ⋯ and the Songs Library Manage portal menus.
+    for (const id of ['song-menu-0', 'songs-manage-btn']) {
       const trigger = find(id)
       await click(trigger)
       assert.equal(portal().parentElement, document.body, 'portal escapes card overflow')
       assert.equal(portal().style.position, 'fixed')
       // Card menu keeps the default 25. The Songs Library menu sits above the sticky filter bar (z-30), since it opens over the sort row on mobile.
-      assert.equal(portal().style.zIndex, id === 'songs-library-menu-btn' ? '40' : '25', 'portal z-index per menu')
+      assert.equal(portal().style.zIndex, id === 'songs-manage-btn' ? '40' : '25', 'portal z-index per menu')
       assert.ok(Number(portal().style.zIndex) < 50, 'below modal/drawer z-50')
       assert.equal(portal().style.left, `${width - 184}px`)
       assert.equal(portal().style.top, '424px', 'flips above bottom-edge anchor')
@@ -67,9 +67,9 @@ for (const width of [320, 1280]) test(`portal actions, viewport bounds and dismi
       assert.equal(portal(), null, 'trigger toggles closed')
     }
     await click(find('song-menu-0'))
-    await click(find('songs-library-menu-btn'))
+    await click(find('songs-manage-btn'))
     assert.equal(document.querySelectorAll('[data-dropdown-portal]').length, 1)
-    await click(find('songs-library-menu-btn'))
+    await click(find('songs-manage-btn'))
     assert.equal(selected, 0, 'menu clicks do not select card')
     await click(find('song-menu-0'))
     const deleteSong = [...portal().querySelectorAll('button')].find(button => button.textContent.includes('Delete Song'))

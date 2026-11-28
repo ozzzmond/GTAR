@@ -157,16 +157,12 @@ test('#346 real signed-out App creates anonymous shares from dedicated buttons a
   try { await click(button('Export JSON')); assert.deepEqual(downloads, ['gtar-setlist-sunday-am.json']) }
   finally { window.HTMLAnchorElement.prototype.click = originalClick }
   await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
-  await click($('[data-testid="workspace-scope-menu-btn"]'))
-  assert.equal($('[data-testid="workspace-menu-share"]'), null)
-  await click($('[data-testid="workspace-scope-menu-btn"]'))
+  assert.equal($('[data-testid="workspace-scope-menu-btn"]'), null)
   await click($('[data-testid="workspace-setlist-header"] [aria-label="Share Setlist"]'))
   assertLocalShare()
   await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
   await click($('[data-testid="workspace-crumb-scope"]'))
-  await click($('[data-testid="workspace-scope-menu-btn"]'))
-  assert.equal($('[data-testid="workspace-menu-share"]'), null)
-  await click($('[data-testid="workspace-scope-menu-btn"]'))
+  assert.equal($('[data-testid="workspace-scope-menu-btn"]'), null)
   await click($('[data-testid="main-share-setlist-btn"]'))
   assertLocalShare()
   await click($('[data-testid="share-setlist-modal-card"] [aria-label="Close"]'))
@@ -303,8 +299,7 @@ test('#433 pasted share URL loads signed out and validates before showing recipi
   const sharedPayload = { version: 1, type: 'GTAR_SHARED_SETLIST', name: 'Pasted snapshot', songs: [{ title: 'Pasted song', rawContent: '[C]Pasted words' }] }
   await mountApp('http://localhost/', { realHome: true, sharedPayload, requests })
   await act(async () => home.onSelectView({ type: 'ALL_SETLISTS' }))
-  await click($('[data-testid="workspace-scope-menu-btn"]'))
-  await click($('[data-testid="workspace-menu-import"]'))
+  await click($('[data-testid="setlists-add-new"]'))
   const input = $('[data-testid="paste-share-link-input"]')
   assert.equal(input.disabled, false)
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set

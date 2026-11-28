@@ -242,46 +242,31 @@ async function mountAuthed(props, auth) {
   await act(async () => root.render(React.createElement(AuthContext.Provider, { value: auth }, React.createElement(SongbookHomeView, props))))
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
 }
-async function openMenu() {
-  await click($('[data-testid="workspace-scope-menu-btn"]'))
-  const menu = $('[data-testid="workspace-scope-menu"]')
-  assert.ok(menu, 'scope ⋯ menu opens')
-  return menu
-}
-const menuItems = () => $$('[data-testid="workspace-scope-menu"] [role^="menuitem"]').map(el => el.getAttribute('data-testid'))
+test('S1_MENU: meatball menu removed; sort dropdown and Add new setlist -> Import modal work with dedicated sharing', async () => {
+  await mount(baseProps({ view: { type: 'ALL_SETLISTS' } }))
+  assert.equal($('[data-testid="workspace-scope-menu-btn"]'), null, 'meatball menu button is removed')
+  assert.equal($('[data-testid="workspace-scope-menu"]'), null)
 
-test('S1_MENU: collection ⋯ menu holds Sort, Import and Manage; dedicated sharing wired to existing handlers', async () => {
-  const opened = []
-  await mount(baseProps({ view: { type: 'ALL_SETLISTS' }, onOpenSetlists: () => opened.push('manage') }))
-  const btn = $('[data-testid="workspace-scope-menu-btn"]')
-  assert.equal(btn.getAttribute('aria-label'), 'Setlist actions')
-  assert.match(btn.className, /min-h-11/) // compact toolbar: 44px, same height as the rest of the row
-  await openMenu()
-  assert.deepEqual(menuItems(), [
-    'workspace-sort-manual', 'workspace-sort-title_asc', 'workspace-sort-title_desc',
-    'workspace-menu-import',
-  ], 'Newest/Oldest stay hidden without reliable timestamps (existing Sort rule)')
-  assert.equal($('[data-testid="workspace-sort-manual"]').getAttribute('aria-checked'), 'true')
-
-  // Sort → existing display-only setlist sort
-  await click($('[data-testid="workspace-sort-title_desc"]'))
+  // Sort → existing display-only setlist sort dropdown
+  const sortSelect = $('[data-testid="setlist-sort-select"]')
+  assert.ok(sortSelect, 'sort dropdown is retained')
+  await act(async () => {
+    sortSelect.value = 'title_desc'
+    sortSelect.dispatchEvent(new window.Event('change', { bubbles: true }))
+  })
   assert.deepEqual($$('[data-testid^="workspace-setlist-card-"]').map(c => c.getAttribute('data-testid')),
     ['workspace-setlist-card-sl-2', 'workspace-setlist-card-sl-1', 'workspace-setlist-card-sl-3'])
-  assert.equal($('[data-testid="workspace-scope-menu"]'), null, 'choosing an item closes the menu')
 
-  await openMenu()
-  assert.equal($('[data-testid="workspace-menu-share"]'), null)
-  assert.equal($('[data-testid="workspace-menu-import"]').textContent.trim(), 'Import Setlist')
   await click($('[data-testid="main-share-setlist-btn"]'))
   assert.ok($('[data-testid="share-setlist-chooser-dialog"]'), 'QR share opens the existing chooser')
   await click($('[data-testid="share-setlist-chooser-dialog"] [aria-label="Close"]'))
 
-  // Import → existing setlist import dialog
-  await openMenu(); await click($('[data-testid="workspace-menu-import"]'))
-  assert.ok($('[data-testid="setlist-import-dialog"]'), 'Import opens the existing setlist import dialog')
+  // Add new setlist → existing setlist import dialog
+  await click($('[data-testid="setlists-add-new"]'))
+  assert.ok($('[data-testid="setlist-import-dialog"]'), 'Add new setlist opens the existing setlist import dialog')
 })
 
-test('S1_MENU: single-setlist ⋯ menu imports, exports and manages; dedicated sharing through existing handlers', async () => {
+test('S1_MENU: single-setlist view removes meatball menu while retaining dedicated sharing and export', async () => {
   const calls = []
   const auth = signIn('member', 'active')
   await mountAuthed(baseProps({
@@ -290,16 +275,10 @@ test('S1_MENU: single-setlist ⋯ menu imports, exports and manages; dedicated s
     onOpenSetlists: () => calls.push(['manage']),
   }), auth)
   await click($('[data-testid="workspace-setlist-card-sl-1"]'))
-  await openMenu()
-  assert.deepEqual(menuItems(), ['workspace-menu-import',
-    'workspace-menu-export-json'])
-  assert.equal($('[data-testid="workspace-menu-share"]'), null)
-  assert.equal($('[data-testid="workspace-menu-import"]').textContent.trim(), 'Import Setlist')
-  assert.equal($('[data-testid="workspace-menu-export-json"]').textContent.trim(), 'Export Setlist')
+  assert.equal($('[data-testid="workspace-scope-menu-btn"]'), null, 'meatball menu button is removed in single-setlist view')
+  assert.ok($('[data-testid="workspace-export-setlist-songs"]'), 'Export Songs button remains')
   await click($('[data-testid="workspace-setlist-header"] [aria-label="Share Setlist"]'))
-  await openMenu(); await click($('[data-testid="workspace-menu-import"]'))
-  assert.ok($('[data-testid="setlist-import-dialog"]'))
-  for (const item of $$('[data-testid="workspace-scope-menu"] [role^="menuitem"]')) assert.match(item.className, /min-h-9|min-h-11/)
+  assert.deepEqual(calls, [['share', 'sl-1']])
 })
 
 test('S1_WIRING: the Explorer selection drives the Songbook view; setlist targets render the workspace in every env (#319)', () => {

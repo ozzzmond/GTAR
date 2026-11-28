@@ -53,14 +53,19 @@ test('a saved Key sort falls back to title, and a saved key filter no longer hid
   assert.ok(document.body.textContent.indexOf('Alpha') < document.body.textContent.indexOf('Bravo'), 'sorted by title')
 })
 
-test('⋯ menu opens the existing import, and is absent without a handler', async () => {
+test('Manage opens the existing import, and meatball button is removed', async () => {
   await mount()
   assert.equal(document.querySelector('[data-testid="songs-library-menu-btn"]'), null)
+  assert.equal(document.querySelector('[data-testid="songs-add-song"]'), null)
+  const manageBtn = document.querySelector('[data-testid="songs-manage-btn"]')
+  assert.ok(manageBtn)
+  await act(async () => manageBtn.click())
+  assert.equal(document.querySelector('[data-testid="songs-library-menu-import"]'), null, 'no Import item without its handler')
   await act(async () => root.unmount())
   document.body.innerHTML = '<div id="root"></div>'
   let opened = 0
   await mount({ onOpenImportSongs: () => { opened++ } })
-  const btn = document.querySelector('[data-testid="songs-library-menu-btn"]')
+  const btn = document.querySelector('[data-testid="songs-manage-btn"]')
   assert.ok(btn)
   await act(async () => btn.click())
   const item = document.querySelector('[data-testid="songs-library-menu-import"]')
@@ -70,20 +75,20 @@ test('⋯ menu opens the existing import, and is absent without a handler', asyn
   assert.equal(document.querySelector('[data-testid="songs-library-menu-import"]'), null, 'menu closes after choosing')
 })
 
-test('⋯ menu is available on an empty library', async () => {
+test('Manage menu is available on an empty library', async () => {
   root = createRoot(document.getElementById('root'))
   await act(async () => root.render(React.createElement(SongbookHomeView, {
     songs: [], setlists: [], activeSongIndex: 0, onOpenImportSongs: () => {},
     onSelectSong: () => {}, onNewSong: () => {}, onOpenSetlists: () => {}, onDeleteSong: () => {},
   })))
-  assert.ok(document.querySelector('[data-testid="songs-library-menu-btn"]'))
+  assert.ok(document.querySelector('[data-testid="songs-manage-btn"]'))
 })
 
-test('#149 S2: ⋯ menu → AI Worker opens the duplicate check', async () => {
+test('#149 S2: Manage → AI Worker opens the duplicate check', async () => {
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   dom.window.HTMLDialogElement.prototype.close = function () { this.open = false }
   await mount({ onTrashDuplicates: () => true })
-  await act(async () => document.querySelector('[data-testid="songs-library-menu-btn"]').click())
+  await act(async () => document.querySelector('[data-testid="songs-manage-btn"]').click())
   assert.equal(document.querySelector('[data-testid="songs-library-menu-import"]'), null, 'no Import item without its handler')
   await act(async () => document.querySelector('[data-testid="songs-library-menu-duplicates"]').click())
   assert.ok(document.querySelector('[data-testid="duplicate-review-dialog"]'))

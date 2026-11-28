@@ -118,13 +118,14 @@ test('EXPLORER_DRAWER_4: active target is announced without a competing sidebar'
 })
 
 
-test('EXPLORER_DRAWER_6: Tags are nested under Songbook and master song counts pluralize', async () => {
+test('EXPLORER_DRAWER_6: Tags are nested under Songbook and All Songs retains its count without master song label', async () => {
   await mount(async ({ click, rerender, calls }) => {
     const allSongs = document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-all-songs"]')
     const songbook = allSongs.closest('section')
     const tags = songbook.querySelector('[role="group"][aria-label="Tags"]')
     assert.ok(tags, 'Tags subgroup belongs to the Songbook section')
-    assert.match(songbook.textContent, /3 master songs/)
+    assert.doesNotMatch(songbook.textContent, /master song/i)
+    assert.match(allSongs.textContent, /All Songs3/)
     assert.match(tags.textContent, /Tags \(4\)/)
     assert.ok(tags.contains(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-tag-worship"]')))
     assert.equal(allSongs.tagName, 'BUTTON')
@@ -135,8 +136,9 @@ test('EXPLORER_DRAWER_6: Tags are nested under Songbook and master song counts p
     assert.equal(calls.close, 2, 'target selection closes the drawer')
     await click([...songbook.querySelectorAll('button')].find(button => button.textContent === 'Songbook'))
     assert.equal(document.querySelector('[role=dialog]').querySelector('[role="group"][aria-label="Tags"]'), null, 'collapsing Songbook hides Tags')
+    await click([...songbook.querySelectorAll('button')].find(button => button.textContent === 'Songbook'))
     await rerender({ songs: [songs[0]] })
-    assert.ok([...document.querySelector('[role=dialog]').querySelectorAll('span')].some(span => span.textContent.trim() === '1 master song'))
-    assert.doesNotMatch(document.querySelector('[role=dialog]').querySelector('nav').textContent, /1 master songs/)
+    assert.doesNotMatch(document.querySelector('[role=dialog]').querySelector('nav').textContent, /master song/i)
+    assert.match(document.querySelector('[role=dialog]').querySelector('[data-testid="explorer-nav-all-songs"]').textContent, /All Songs1/)
   })
 })
